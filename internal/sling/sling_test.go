@@ -162,7 +162,7 @@ func init() {
 		"my-formula", "convoy-formula",
 	} {
 		content := fmt.Sprintf("formula = %q\nversion = 1\n\n[[steps]]\nid = \"work\"\ntitle = \"Work\"\n", name)
-		_ = os.WriteFile(filepath.Join(dir, name+".formula.toml"), []byte(content), 0o644)
+		_ = os.WriteFile(filepath.Join(dir, name+".toml"), []byte(content), 0o644)
 	}
 	sharedTestFormulaDir = dir
 
@@ -1478,7 +1478,7 @@ func TestSlingAttachFormulaForceStillRejectsMissingBead(t *testing.T) {
 
 func TestSlingAttachGraphFormulaRejectsExistingLiveRoot(t *testing.T) {
 	formulaDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.formula.toml"), []byte(`
+	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.toml"), []byte(`
 formula = "graph-work"
 version = 2
 contract = "graph.v2"
@@ -1536,7 +1536,7 @@ title = "Do work"
 
 func TestSlingAttachGraphFormulaRejectsExistingLiveRootAcrossStores(t *testing.T) {
 	formulaDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.formula.toml"), []byte(`
+	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.toml"), []byte(`
 formula = "graph-work"
 version = 2
 contract = "graph.v2"
@@ -1607,7 +1607,7 @@ title = "Do work"
 
 func TestSlingAttachGraphFormulaForceReplacesExistingLiveRootAcrossStores(t *testing.T) {
 	formulaDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.formula.toml"), []byte(`
+	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.toml"), []byte(`
 formula = "graph-work"
 version = 2
 contract = "graph.v2"
@@ -1698,7 +1698,7 @@ title = "Do work"
 
 func TestSlingAttachGraphFormulaForceRestoresCrossStoreRootWhenFinalizeFails(t *testing.T) {
 	formulaDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.formula.toml"), []byte(`
+	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.toml"), []byte(`
 formula = "graph-work"
 version = 2
 contract = "graph.v2"
@@ -1792,7 +1792,7 @@ title = "Do work"
 
 func TestSlingAttachGraphFormulaForceAllowsExistingLiveRoot(t *testing.T) {
 	formulaDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.formula.toml"), []byte(`
+	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.toml"), []byte(`
 formula = "graph-work"
 version = 2
 contract = "graph.v2"
@@ -1874,7 +1874,7 @@ title = "Do work"
 
 func TestSlingAttachGraphFormulaForceRollsBackNewRootWhenSupersededCloseFails(t *testing.T) {
 	formulaDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.formula.toml"), []byte(`
+	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.toml"), []byte(`
 formula = "graph-work"
 version = 2
 contract = "graph.v2"
@@ -1974,7 +1974,7 @@ title = "Do work"
 
 func TestSlingAttachGraphFormulaForceRestoresSupersededRootWhenFinalizeFails(t *testing.T) {
 	formulaDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.formula.toml"), []byte(`
+	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.toml"), []byte(`
 formula = "graph-work"
 version = 2
 contract = "graph.v2"
@@ -2068,7 +2068,7 @@ title = "Do work"
 
 func TestSlingAttachGraphFormulaConcurrentLaunchCreatesSingleRoot(t *testing.T) {
 	formulaDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.formula.toml"), []byte(`
+	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.toml"), []byte(`
 formula = "graph-work"
 version = 2
 contract = "graph.v2"
@@ -2148,7 +2148,7 @@ title = "Do work"
 
 func TestDoSlingBatchGraphFormulaForceAllowsAttachedWorkflow(t *testing.T) {
 	formulaDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.formula.toml"), []byte(`
+	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.toml"), []byte(`
 formula = "graph-work"
 version = 2
 contract = "graph.v2"
@@ -2243,7 +2243,7 @@ func TestDoSlingBatchPropagatesConflictErrorToCaller(t *testing.T) {
 	// instead of exit 3 and never saw the "gc workflow delete-source"
 	// cleanup hint — the whole user-facing point of the fix.
 	formulaDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.formula.toml"), []byte(`
+	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.toml"), []byte(`
 formula = "graph-work"
 version = 2
 contract = "graph.v2"
@@ -2333,7 +2333,7 @@ func TestDoSlingBatchPreflightEmitsConflictErrorForWorkflowAttachment(t *testing
 	// pre-check now emits a typed ConflictError alongside the legacy
 	// summary so errors.As succeeds at the CLI boundary.
 	formulaDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.formula.toml"), []byte(`
+	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.toml"), []byte(`
 formula = "graph-work"
 version = 2
 contract = "graph.v2"
@@ -2420,7 +2420,7 @@ func TestDoSlingBatchPreflightEmitsPerChildConflictErrors(t *testing.T) {
 	// conflicted child via errors.Join so each child's blocking IDs
 	// stay correctly attributed.
 	formulaDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.formula.toml"), []byte(`
+	if err := os.WriteFile(filepath.Join(formulaDir, "graph-work.toml"), []byte(`
 formula = "graph-work"
 version = 2
 contract = "graph.v2"

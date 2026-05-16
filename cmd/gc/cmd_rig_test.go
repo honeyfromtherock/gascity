@@ -31,15 +31,47 @@ func (f mkdirAllErrorFS) MkdirAll(path string, perm os.FileMode) error {
 	return f.FS.MkdirAll(path, perm)
 }
 
-func TestDoRigAdd_Basic(t *testing.T) {
-	cityPath := t.TempDir()
+func writeSchema2RigCity(t *testing.T, cityPath, workspaceName, cityToml, siteToml string) {
+	t.Helper()
 	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n"
+	packToml := fmt.Sprintf("[pack]\nname = %q\nschema = 2\n", workspaceName)
+	if err := os.WriteFile(filepath.Join(cityPath, "pack.toml"), []byte(packToml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if cityToml == "" {
+		cityToml = "[workspace]\n"
+	}
 	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if siteToml == "" {
+		siteToml = fmt.Sprintf("workspace_name = %q\n", workspaceName)
+	}
+	if err := os.WriteFile(config.SiteBindingPath(cityPath), []byte(siteToml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeSchema2RigCityFS(t *testing.T, f *fsys.Fake, cityPath, workspaceName, cityToml, siteToml string) {
+	t.Helper()
+	f.Dirs[cityPath] = true
+	f.Dirs[filepath.Join(cityPath, ".gc")] = true
+	f.Files[filepath.Join(cityPath, "pack.toml")] = []byte(fmt.Sprintf("[pack]\nname = %q\nschema = 2\n", workspaceName))
+	if cityToml == "" {
+		cityToml = "[workspace]\n"
+	}
+	f.Files[filepath.Join(cityPath, "city.toml")] = []byte(cityToml)
+	if siteToml == "" {
+		siteToml = fmt.Sprintf("workspace_name = %q\n", workspaceName)
+	}
+	f.Files[config.SiteBindingPath(cityPath)] = []byte(siteToml)
+}
+
+func TestDoRigAdd_Basic(t *testing.T) {
+	cityPath := t.TempDir()
+	writeSchema2RigCity(t, cityPath, "test-city", "[workspace]\n", "")
 
 	rigPath := filepath.Join(t.TempDir(), "my-frontend")
 	if err := os.MkdirAll(rigPath, 0o755); err != nil {
@@ -107,13 +139,7 @@ func makeMasterRig(t *testing.T) string {
 
 func TestDoRigAdd_DetectsDefaultBranchFromOriginHEAD(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(t, cityPath, "test-city", "[workspace]\n", "")
 
 	rigPath := makeMasterRig(t)
 
@@ -141,13 +167,7 @@ func TestDoRigAdd_DetectsDefaultBranchFromOriginHEAD(t *testing.T) {
 
 func TestDoRigAdd_DefaultBranchFlagOverridesProbe(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(t, cityPath, "test-city", "[workspace]\n", "")
 
 	rigPath := makeMasterRig(t)
 
@@ -175,14 +195,14 @@ func TestDoRigAdd_DefaultBranchFlagOverridesProbe(t *testing.T) {
 
 func TestDoRigAdd_BackfillsExistingRigDefaultBranch(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	rigPath := makeMasterRig(t)
-	cityToml := fmt.Sprintf("[workspace]\nname = \"test-city\"\n\n[[rigs]]\nname = \"master-rig\"\npath = %q\n", rigPath)
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(
+		t,
+		cityPath,
+		"test-city",
+		"[workspace]\n\n[[rigs]]\nname = \"master-rig\"\n",
+		fmt.Sprintf("workspace_name = \"test-city\"\n\n[[rig]]\nname = \"master-rig\"\npath = %q\n", rigPath),
+	)
 
 	t.Setenv("GC_DOLT", "skip")
 	t.Setenv("GC_BEADS", "bd")
@@ -204,13 +224,7 @@ func TestDoRigAdd_BackfillsExistingRigDefaultBranch(t *testing.T) {
 
 func TestDoRigAdd_NonGitDirOmitsDefaultBranch(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(t, cityPath, "test-city", "[workspace]\n", "")
 
 	rigPath := filepath.Join(t.TempDir(), "no-git")
 	if err := os.MkdirAll(rigPath, 0o755); err != nil {
@@ -285,13 +299,7 @@ func TestResolveRigAddPath(t *testing.T) {
 
 func TestDoRigAddWritesSiteBindingInsteadOfPath(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(t, cityPath, "test-city", "[workspace]\n", "")
 
 	rigPath := filepath.Join(t.TempDir(), "my-frontend")
 	if err := os.MkdirAll(rigPath, 0o755); err != nil {
@@ -326,30 +334,19 @@ func TestDoRigAddWritesSiteBindingInsteadOfPath(t *testing.T) {
 
 func TestDoRigAddRouteFailureRollsBackConfig(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 
 	brokenRigFile := filepath.Join(t.TempDir(), "broken-rig")
 	if err := os.WriteFile(brokenRigFile, []byte("not a directory"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	cityToml := strings.Join([]string{
-		"[workspace]",
-		`name = "test-city"`,
-		"",
-		"[[agent]]",
-		`name = "mayor"`,
-		"",
-		"[[rigs]]",
-		`name = "broken"`,
-		`path = "` + brokenRigFile + `"`,
-		"",
-	}, "\n")
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(
+		t,
+		cityPath,
+		"test-city",
+		"[workspace]\n\n[[rigs]]\nname = \"broken\"\n",
+		fmt.Sprintf("workspace_name = \"test-city\"\n\n[[rig]]\nname = \"broken\"\npath = %q\n", brokenRigFile),
+	)
 
 	rigPath := filepath.Join(t.TempDir(), "new-rig")
 	if err := os.MkdirAll(rigPath, 0o755); err != nil {
@@ -375,23 +372,24 @@ func TestDoRigAddRouteFailureRollsBackConfig(t *testing.T) {
 	if strings.Contains(string(cityData), "new-rig") {
 		t.Fatalf("city.toml should roll back the new rig after route failure:\n%s", cityData)
 	}
-	if !strings.Contains(string(cityData), brokenRigFile) {
-		t.Fatalf("city.toml should restore the original broken rig binding after rollback:\n%s", cityData)
+	siteData, err := os.ReadFile(config.SiteBindingPath(cityPath))
+	if err != nil {
+		t.Fatalf("reading .gc/site.toml after rollback: %v", err)
 	}
-	if _, err := os.Stat(config.SiteBindingPath(cityPath)); err == nil {
-		t.Fatalf(".gc/site.toml should not be left behind after rollback")
+	if !strings.Contains(string(siteData), brokenRigFile) {
+		t.Fatalf(".gc/site.toml should restore the original broken rig binding after rollback:\n%s", siteData)
 	}
 }
 
 func TestDoRigAdd_DuplicateNameDifferentPath(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"frontend\"\npath = \"/some/path\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(
+		t,
+		cityPath,
+		"test-city",
+		"[workspace]\n\n[[rigs]]\nname = \"frontend\"\n",
+		"workspace_name = \"test-city\"\n\n[[rig]]\nname = \"frontend\"\npath = \"/some/path\"\n",
+	)
 
 	rigPath := filepath.Join(t.TempDir(), "frontend")
 	if err := os.MkdirAll(rigPath, 0o755); err != nil {
@@ -417,9 +415,6 @@ func TestDoRigAdd_DuplicateNameDifferentPath(t *testing.T) {
 
 func TestDoRigAdd_IdempotentSameNameSamePath(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 
 	rigPath := filepath.Join(t.TempDir(), "my-frontend")
 	if err := os.MkdirAll(rigPath, 0o755); err != nil {
@@ -427,10 +422,13 @@ func TestDoRigAdd_IdempotentSameNameSamePath(t *testing.T) {
 	}
 
 	// Config already has this rig at the same path.
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"my-frontend\"\npath = \"" + rigPath + "\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(
+		t,
+		cityPath,
+		"test-city",
+		"[workspace]\n\n[[rigs]]\nname = \"my-frontend\"\n",
+		fmt.Sprintf("workspace_name = \"test-city\"\n\n[[rig]]\nname = \"my-frontend\"\npath = %q\n", rigPath),
+	)
 
 	// Save original config content.
 	origData, err := os.ReadFile(filepath.Join(cityPath, "city.toml"))
@@ -467,9 +465,6 @@ func TestDoRigAdd_IdempotentSameNameSamePath(t *testing.T) {
 
 func TestDoRigAdd_DoesNotWritePortFileForFileBackedExternalRig(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	if err := os.MkdirAll(filepath.Join(cityPath, ".gc", "runtime", "packs", "dolt"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -488,10 +483,7 @@ func TestDoRigAdd_DoesNotWritePortFileForFileBackedExternalRig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(t, cityPath, "test-city", "[workspace]\n", "workspace_name = \"test-city\"\n")
 
 	rigPath := filepath.Join(t.TempDir(), "test-external")
 	if err := os.MkdirAll(rigPath, 0o755); err != nil {
@@ -515,9 +507,6 @@ func TestDoRigAdd_DoesNotWritePortFileForFileBackedExternalRig(t *testing.T) {
 // Regression: re-add must use the rig's configured prefix, not re-derive it.
 func TestDoRigAdd_ReAddUsesExistingPrefix(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 
 	rigPath := filepath.Join(t.TempDir(), "my-frontend")
 	if err := os.MkdirAll(rigPath, 0o755); err != nil {
@@ -525,10 +514,13 @@ func TestDoRigAdd_ReAddUsesExistingPrefix(t *testing.T) {
 	}
 
 	// Rig has explicit prefix "fe" (different from derived "mf").
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"my-frontend\"\npath = \"" + rigPath + "\"\nprefix = \"fe\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(
+		t,
+		cityPath,
+		"test-city",
+		"[workspace]\n\n[[rigs]]\nname = \"my-frontend\"\nprefix = \"fe\"\n",
+		fmt.Sprintf("workspace_name = \"test-city\"\n\n[[rig]]\nname = \"my-frontend\"\npath = %q\n", rigPath),
+	)
 
 	t.Setenv("GC_DOLT", "skip")
 	t.Setenv("GC_BEADS", "file")
@@ -551,19 +543,19 @@ func TestDoRigAdd_ReAddUsesExistingPrefix(t *testing.T) {
 
 func TestDoRigAdd_ReAddMissingPathUsesCandidateConfig(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 
 	rigPath := filepath.Join(t.TempDir(), "my-frontend")
 	if err := os.MkdirAll(rigPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"my-frontend\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(
+		t,
+		cityPath,
+		"test-city",
+		"[workspace]\n\n[[rigs]]\nname = \"my-frontend\"\n",
+		"workspace_name = \"test-city\"\n",
+	)
 
 	t.Setenv("GC_DOLT", "skip")
 	t.Setenv("GC_BEADS", "file")
@@ -581,9 +573,6 @@ func TestDoRigAdd_ReAddMissingPathUsesCandidateConfig(t *testing.T) {
 
 func TestDoRigAdd_ReAddWarnsDifferingFlags(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 
 	rigPath := filepath.Join(t.TempDir(), "my-frontend")
 	if err := os.MkdirAll(rigPath, 0o755); err != nil {
@@ -591,10 +580,13 @@ func TestDoRigAdd_ReAddWarnsDifferingFlags(t *testing.T) {
 	}
 
 	// Existing rig is NOT suspended.
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"my-frontend\"\npath = \"" + rigPath + "\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(
+		t,
+		cityPath,
+		"test-city",
+		"[workspace]\n\n[[rigs]]\nname = \"my-frontend\"\n",
+		fmt.Sprintf("workspace_name = \"test-city\"\n\n[[rig]]\nname = \"my-frontend\"\npath = %q\n", rigPath),
+	)
 
 	t.Setenv("GC_DOLT", "skip")
 	t.Setenv("GC_BEADS", "file")
@@ -620,9 +612,6 @@ func TestDoRigAdd_ReAddWarnsDifferingFlags(t *testing.T) {
 func TestDoRigAdd_ReAddNoSpuriousWarning(t *testing.T) {
 	t.Setenv("GC_HOME", t.TempDir()) // isolate global rig registry
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 
 	rigPath := filepath.Join(t.TempDir(), "my-frontend")
 	if err := os.MkdirAll(rigPath, 0o755); err != nil {
@@ -630,10 +619,13 @@ func TestDoRigAdd_ReAddNoSpuriousWarning(t *testing.T) {
 	}
 
 	// Existing rig IS suspended with includes.
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"my-frontend\"\npath = \"" + rigPath + "\"\nsuspended = true\nincludes = [\"packs/old\"]\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(
+		t,
+		cityPath,
+		"test-city",
+		"[workspace]\n\n[[rigs]]\nname = \"my-frontend\"\nsuspended = true\nincludes = [\"packs/old\"]\n",
+		fmt.Sprintf("workspace_name = \"test-city\"\n\n[[rig]]\nname = \"my-frontend\"\npath = %q\n", rigPath),
+	)
 
 	t.Setenv("GC_DOLT", "skip")
 	t.Setenv("GC_BEADS", "file")
@@ -651,13 +643,7 @@ func TestDoRigAdd_ReAddNoSpuriousWarning(t *testing.T) {
 
 func TestDoRigAdd_NotADirectory(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cityToml := "[workspace]\nname = \"test\"\n\n[[agent]]\nname = \"mayor\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(t, cityPath, "test", "[workspace]\n", "")
 
 	filePath := filepath.Join(t.TempDir(), "not-a-dir")
 	if err := os.WriteFile(filePath, []byte("nope"), 0o644); err != nil {
@@ -673,13 +659,7 @@ func TestDoRigAdd_NotADirectory(t *testing.T) {
 
 func TestDoRigAdd_RoutesGenerated(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cityToml := "[workspace]\nname = \"my-city\"\n\n[[agent]]\nname = \"mayor\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(t, cityPath, "my-city", "[workspace]\n", "")
 
 	rigPath := filepath.Join(t.TempDir(), "my-project")
 	if err := os.MkdirAll(rigPath, 0o755); err != nil {
@@ -712,19 +692,18 @@ func TestDoRigAdd_RoutesGenerated(t *testing.T) {
 // creation fails. This prevents phantom rigs in config.
 func TestDoRigAdd_ConfigUnchangedOnInfraFailure(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	originalToml := "[workspace]\nname = \"test\"\n\n[[agent]]\nname = \"mayor\"\n"
+	writeSchema2RigCity(t, cityPath, "test", "[workspace]\n", "")
 	tomlPath := filepath.Join(cityPath, "city.toml")
-	if err := os.WriteFile(tomlPath, []byte(originalToml), 0o644); err != nil {
+	originalBytes, err := os.ReadFile(tomlPath)
+	if err != nil {
 		t.Fatal(err)
 	}
+	originalToml := string(originalBytes)
 
 	// Use a fake FS that fails on beads init for the rig.
 	f := fsys.NewFake()
+	writeSchema2RigCityFS(t, f, cityPath, "test", originalToml, "")
 	f.Dirs["/fake-rig"] = true
-	f.Files[tomlPath] = []byte(originalToml)
 	f.Errors[filepath.Join("/fake-rig", ".beads")] = os.ErrPermission
 
 	var stdout, stderr bytes.Buffer
@@ -747,11 +726,8 @@ func TestDoRigAdd_RootPackDefaultRigImportsErrorDoesNotMutateRig(t *testing.T) {
 	f := fsys.NewFake()
 	cityPath := "/city"
 	rigPath := "/rigs/my-project"
-	originalToml := "[workspace]\nname = \"test\"\n\n[[agent]]\nname = \"mayor\"\n"
-
-	f.Dirs[cityPath] = true
-	f.Dirs[filepath.Join(cityPath, ".gc")] = true
-	f.Files[filepath.Join(cityPath, "city.toml")] = []byte(originalToml)
+	writeSchema2RigCityFS(t, f, cityPath, "test", "[workspace]\n", "")
+	originalToml := string(f.Files[filepath.Join(cityPath, "city.toml")])
 	f.Errors[filepath.Join(cityPath, "pack.toml")] = errors.New("read denied")
 
 	t.Setenv("GC_DOLT", "skip")
@@ -775,14 +751,9 @@ func TestDoRigAdd_RootPackDefaultRigImportsErrorDoesNotMutateRig(t *testing.T) {
 
 func TestDoRigAdd_CandidateValidationErrorDoesNotCreateMissingRig(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"registered\"\n"
+	cityToml := "[workspace]\n\n[[rigs]]\nname = \"registered\"\n"
+	writeSchema2RigCity(t, cityPath, "test-city", cityToml, "")
 	cityTomlPath := filepath.Join(cityPath, "city.toml")
-	if err := os.WriteFile(cityTomlPath, []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
 
 	rigPath := filepath.Join(t.TempDir(), "my-project")
 
@@ -813,12 +784,10 @@ func TestDoRigAdd_CreateMissingRigDirectoryError(t *testing.T) {
 	base := fsys.NewFake()
 	cityPath := "/city"
 	rigPath := "/rigs/my-project"
-	originalToml := "[workspace]\nname = \"test\"\n\n[[agent]]\nname = \"mayor\"\n"
+	writeSchema2RigCityFS(t, base, cityPath, "test", "[workspace]\n", "")
+	originalToml := string(base.Files[filepath.Join(cityPath, "city.toml")])
 	mkdirErr := errors.New("mkdir denied")
 
-	base.Dirs[cityPath] = true
-	base.Dirs[filepath.Join(cityPath, ".gc")] = true
-	base.Files[filepath.Join(cityPath, "city.toml")] = []byte(originalToml)
 	f := mkdirAllErrorFS{FS: base, path: rigPath, err: mkdirErr}
 
 	t.Setenv("GC_DOLT", "skip")
@@ -1006,10 +975,8 @@ func TestResolveRigForAgent_TrailingSlash(t *testing.T) {
 
 func TestDoRigSuspend(t *testing.T) {
 	cityPath := t.TempDir()
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"frontend\"\npath = \"/some/path\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	siteToml := "workspace_name = \"test-city\"\n\n[[rig]]\nname = \"frontend\"\npath = \"/some/path\"\n"
+	writeSchema2RigCity(t, cityPath, "test-city", "[workspace]\n\n[[rigs]]\nname = \"frontend\"\n", siteToml)
 
 	var stdout, stderr bytes.Buffer
 	code := doRigSuspend(fsys.OSFS{}, cityPath, "frontend", &stdout, &stderr)
@@ -1031,9 +998,8 @@ func TestDoRigSuspend(t *testing.T) {
 }
 
 func TestDoRigSuspendNotFound(t *testing.T) {
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n"
 	f := fsys.NewFake()
-	f.Files["/city/city.toml"] = []byte(cityToml)
+	writeSchema2RigCityFS(t, f, "/city", "test-city", "[workspace]\n", "")
 
 	var stdout, stderr bytes.Buffer
 	code := doRigSuspend(f, "/city", "nonexistent", &stdout, &stderr)
@@ -1047,10 +1013,9 @@ func TestDoRigSuspendNotFound(t *testing.T) {
 
 func TestDoRigSuspendAlreadySuspended(t *testing.T) {
 	cityPath := t.TempDir()
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"frontend\"\npath = \"/some/path\"\nsuspended = true\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	cityToml := "[workspace]\n\n[[rigs]]\nname = \"frontend\"\nsuspended = true\n"
+	siteToml := "workspace_name = \"test-city\"\n\n[[rig]]\nname = \"frontend\"\npath = \"/some/path\"\n"
+	writeSchema2RigCity(t, cityPath, "test-city", cityToml, siteToml)
 
 	var stdout, stderr bytes.Buffer
 	code := doRigSuspend(fsys.OSFS{}, cityPath, "frontend", &stdout, &stderr)
@@ -1061,10 +1026,9 @@ func TestDoRigSuspendAlreadySuspended(t *testing.T) {
 
 func TestDoRigResume(t *testing.T) {
 	cityPath := t.TempDir()
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"frontend\"\npath = \"/some/path\"\nsuspended = true\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	cityToml := "[workspace]\n\n[[rigs]]\nname = \"frontend\"\nsuspended = true\n"
+	siteToml := "workspace_name = \"test-city\"\n\n[[rig]]\nname = \"frontend\"\npath = \"/some/path\"\n"
+	writeSchema2RigCity(t, cityPath, "test-city", cityToml, siteToml)
 
 	var stdout, stderr bytes.Buffer
 	code := doRigResume(fsys.OSFS{}, cityPath, "frontend", &stdout, &stderr)
@@ -1086,9 +1050,8 @@ func TestDoRigResume(t *testing.T) {
 }
 
 func TestDoRigResumeNotFound(t *testing.T) {
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n"
 	f := fsys.NewFake()
-	f.Files["/city/city.toml"] = []byte(cityToml)
+	writeSchema2RigCityFS(t, f, "/city", "test-city", "[workspace]\n", "")
 
 	var stdout, stderr bytes.Buffer
 	code := doRigResume(f, "/city", "nonexistent", &stdout, &stderr)
@@ -1102,10 +1065,8 @@ func TestDoRigResumeNotFound(t *testing.T) {
 
 func TestDoRigResumeNotSuspended(t *testing.T) {
 	cityPath := t.TempDir()
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"frontend\"\npath = \"/some/path\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	siteToml := "workspace_name = \"test-city\"\n\n[[rig]]\nname = \"frontend\"\npath = \"/some/path\"\n"
+	writeSchema2RigCity(t, cityPath, "test-city", "[workspace]\n\n[[rigs]]\nname = \"frontend\"\n", siteToml)
 
 	var stdout, stderr bytes.Buffer
 	code := doRigResume(fsys.OSFS{}, cityPath, "frontend", &stdout, &stderr)
@@ -1121,10 +1082,9 @@ func TestDoRigListShowsSuspended(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"my-frontend\"\npath = \"" + rigPath + "\"\nsuspended = true\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	cityToml := "[workspace]\n\n[[rigs]]\nname = \"my-frontend\"\nsuspended = true\n"
+	siteToml := fmt.Sprintf("workspace_name = \"test-city\"\n\n[[rig]]\nname = \"my-frontend\"\npath = %q\n", rigPath)
+	writeSchema2RigCity(t, cityPath, "test-city", cityToml, siteToml)
 
 	var stdout, stderr bytes.Buffer
 	code := doRigList(fsys.OSFS{}, cityPath, false, &stdout, &stderr)
@@ -1138,13 +1098,7 @@ func TestDoRigListShowsSuspended(t *testing.T) {
 
 func TestDoRigAdd_WithPack(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(t, cityPath, "test-city", "[workspace]\n", "")
 
 	rigPath := filepath.Join(t.TempDir(), "my-project")
 	if err := os.MkdirAll(rigPath, 0o755); err != nil {
@@ -1184,13 +1138,7 @@ func TestDoRigAdd_WithPack(t *testing.T) {
 
 func TestDoRigAdd_WithMultiplePacks(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(t, cityPath, "test-city", "[workspace]\n", "")
 
 	rigPath := filepath.Join(t.TempDir(), "my-project")
 	if err := os.MkdirAll(rigPath, 0o755); err != nil {
@@ -1248,13 +1196,7 @@ func TestNewRigCmdRegistersSetEndpointSubcommand(t *testing.T) {
 
 func TestDoRigAdd_WithoutPack(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(t, cityPath, "test-city", "[workspace]\n", "")
 
 	rigPath := filepath.Join(t.TempDir(), "my-project")
 	if err := os.MkdirAll(rigPath, 0o755); err != nil {
@@ -1618,13 +1560,7 @@ func TestDoRigAdd_ExplicitPrefixResolvesCollision(t *testing.T) {
 // --prefix must be rejected when the rig's .beads/config.yaml has a different prefix.
 func TestDoRigAdd_ExplicitPrefixConflictsWithExistingBeads(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cityToml := "[workspace]\nname = \"my-city\"\n\n[[agent]]\nname = \"mayor\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(t, cityPath, "my-city", "[workspace]\n", "")
 
 	// Rig already has .beads/config.yaml with prefix "ab".
 	rigPath := filepath.Join(t.TempDir(), "alpha-beta")
@@ -1653,13 +1589,7 @@ func TestDoRigAdd_ExplicitPrefixConflictsWithExistingBeads(t *testing.T) {
 // Auto-derived prefix must also be rejected when it conflicts with existing .beads.
 func TestDoRigAdd_DerivedPrefixConflictsWithExistingBeads(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cityToml := "[workspace]\nname = \"my-city\"\n\n[[agent]]\nname = \"mayor\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(t, cityPath, "my-city", "[workspace]\n", "")
 
 	// Rig "alpha-beta" would derive prefix "ab", but .beads already has "zz".
 	rigPath := filepath.Join(t.TempDir(), "alpha-beta")
@@ -1691,13 +1621,7 @@ func TestDoRigAdd_DerivedPrefixConflictsWithExistingBeads(t *testing.T) {
 // Dolt store produces confusing "signal: killed" failures (see fo-5zeij).
 func TestDoRigAdd_ExistingBeadsRequiresAdopt(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cityToml := "[workspace]\nname = \"my-city\"\n\n[[agent]]\nname = \"mayor\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(t, cityPath, "my-city", "[workspace]\n", "")
 
 	// Rig "alpha-beta" derives prefix "ab", and .beads already has "ab"
 	// — so the prefix-conflict guard does not trip and we reach the new
@@ -1735,9 +1659,8 @@ func TestDoRigAdd_ExistingBeadsStatErrorFailsClosed(t *testing.T) {
 	rigPath := "/alpha-beta"
 	beadsPath := filepath.Join(rigPath, ".beads")
 
-	f.Dirs[filepath.Join(cityPath, ".gc")] = true
+	writeSchema2RigCityFS(t, f, cityPath, "my-city", "[workspace]\n", "")
 	f.Dirs[rigPath] = true
-	f.Files[filepath.Join(cityPath, "city.toml")] = []byte("[workspace]\nname = \"my-city\"\n\n[[agent]]\nname = \"mayor\"\n")
 	f.Errors[beadsPath] = os.ErrPermission
 
 	t.Setenv("GC_DOLT", "skip")
@@ -1811,19 +1734,15 @@ func TestReadBeadsPrefix(t *testing.T) {
 
 func TestDoRigAdd_ReAddWarnsDifferingPrefix(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 
 	rigPath := filepath.Join(t.TempDir(), "my-frontend")
 	if err := os.MkdirAll(rigPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"my-frontend\"\npath = \"" + rigPath + "\"\nprefix = \"mf\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	cityToml := "[workspace]\n\n[[rigs]]\nname = \"my-frontend\"\nprefix = \"mf\"\n"
+	siteToml := fmt.Sprintf("workspace_name = \"test-city\"\n\n[[rig]]\nname = \"my-frontend\"\npath = %q\n", rigPath)
+	writeSchema2RigCity(t, cityPath, "test-city", cityToml, siteToml)
 
 	t.Setenv("GC_DOLT", "skip")
 	t.Setenv("GC_BEADS", "file")
@@ -1842,19 +1761,13 @@ func TestDoRigAdd_ReAddWarnsDifferingPrefix(t *testing.T) {
 
 func TestDoRigAdd_PrefixCanonicalizedToLowercase(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 
 	rigPath := filepath.Join(t.TempDir(), "my-rig")
 	if err := os.MkdirAll(rigPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(t, cityPath, "test-city", "[workspace]\n", "")
 
 	t.Setenv("GC_DOLT", "skip")
 	t.Setenv("GC_BEADS", "file")
@@ -1896,17 +1809,11 @@ func TestDoRigAdd_PrefixCanonicalizedToLowercase(t *testing.T) {
 
 func TestDoRigAdd_PrefixRejectsHyphens(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	rigPath := filepath.Join(t.TempDir(), "my-rig")
 	if err := os.MkdirAll(rigPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(t, cityPath, "test-city", "[workspace]\n", "")
 
 	var stdout, stderr bytes.Buffer
 	code := doRigAdd(fsys.OSFS{}, cityPath, rigPath, nil, "", "my-app", "", false, false, &stdout, &stderr)
@@ -2046,13 +1953,7 @@ name = "inline-agent"
 
 func TestDoRigAdd_AdoptExistingBeads(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(t, cityPath, "test-city", "[workspace]\n", "")
 
 	rigPath := filepath.Join(t.TempDir(), "adopted-rig")
 	if err := os.MkdirAll(filepath.Join(rigPath, ".beads"), 0o755); err != nil {
@@ -2087,13 +1988,7 @@ func TestDoRigAdd_AdoptExistingBeads(t *testing.T) {
 
 func TestDoRigAdd_AdoptRequiresMetadataJSON(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(t, cityPath, "test-city", "[workspace]\n", "")
 
 	rigPath := filepath.Join(t.TempDir(), "no-beads-rig")
 	if err := os.MkdirAll(rigPath, 0o755); err != nil {
@@ -2115,13 +2010,7 @@ func TestDoRigAdd_AdoptRequiresMetadataJSON(t *testing.T) {
 
 func TestDoRigAdd_AdoptRequiresExistingDir(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(t, cityPath, "test-city", "[workspace]\n", "")
 
 	rigPath := filepath.Join(t.TempDir(), "does-not-exist")
 
@@ -2140,13 +2029,7 @@ func TestDoRigAdd_AdoptRequiresExistingDir(t *testing.T) {
 
 func TestDoRigAdd_AdoptNonGitDirSucceeds(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(t, cityPath, "test-city", "[workspace]\n", "")
 
 	// Create rig without .git — should succeed with --adopt.
 	rigPath := filepath.Join(t.TempDir(), "no-git-rig")
@@ -2182,13 +2065,7 @@ func TestDoRigAdd_AdoptNonGitDirSucceeds(t *testing.T) {
 
 func TestDoRigAdd_AdoptRequiresConfigYaml(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(t, cityPath, "test-city", "[workspace]\n", "")
 
 	// Create rig with metadata.json but no config.yaml.
 	rigPath := filepath.Join(t.TempDir(), "no-config-rig")
@@ -2215,13 +2092,7 @@ func TestDoRigAdd_AdoptRequiresConfigYaml(t *testing.T) {
 
 func TestDoRigAdd_AdoptRejectsEmptyConfigYaml(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(t, cityPath, "test-city", "[workspace]\n", "")
 
 	// Create rig with config.yaml that has no issue_prefix key.
 	rigPath := filepath.Join(t.TempDir(), "empty-config-rig")
@@ -2252,13 +2123,7 @@ func TestDoRigAdd_AdoptRejectsEmptyConfigYaml(t *testing.T) {
 
 func TestDoRigAdd_AdoptWithoutPrefixMismatch(t *testing.T) {
 	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSchema2RigCity(t, cityPath, "test-city", "[workspace]\n", "")
 
 	// Create rig whose directory basename ("mismatch-rig") derives a prefix
 	// ("mismatchrig") that differs from config.yaml's prefix ("xr").
