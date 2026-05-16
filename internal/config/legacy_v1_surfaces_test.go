@@ -326,7 +326,7 @@ func TestIsLegacyV1SurfaceWarning(t *testing.T) {
 	}
 }
 
-func TestDetectLegacyV1Surfaces_PointsAtDoctorWithoutPromisingInPlaceUpgrade(t *testing.T) {
+func TestDetectLegacyV1Surfaces_PointsAtDoctorWithoutRecommendingImportMigrate(t *testing.T) {
 	cfg := &City{
 		Agents: []Agent{{Name: "a"}},
 		Packs:  map[string]PackSource{"p": {}},
@@ -346,14 +346,15 @@ func TestDetectLegacyV1Surfaces_PointsAtDoctorWithoutPromisingInPlaceUpgrade(t *
 		if !strings.Contains(w, wantSurfaces[i]) {
 			t.Errorf("warning %d = %q, want surface %q", i, w, wantSurfaces[i])
 		}
-		if !strings.Contains(w, "Run `gc doctor` for migration guidance;") {
+		if strings.Contains(w, "[packs] is deprecated") {
+			if !strings.Contains(w, "Run `gc doctor` to inspect; `gc doctor --fix` migrates entries referenced by legacy workspace include lists, then migrate or remove any remaining [packs] entries manually.") {
+				t.Errorf("warning %d = %q, expected [packs] cleanup guidance", i, w)
+			}
+		} else if !strings.Contains(w, "Run `gc doctor` to inspect; `gc doctor --fix` handles the safe mechanical rewrites available in this wave.") {
 			t.Errorf("warning %d = %q, expected gc doctor guidance", i, w)
 		}
-		if !strings.Contains(w, "PackV1 city config is no longer upgraded in place.") {
-			t.Errorf("warning %d = %q, expected no in-place upgrade guidance", i, w)
-		}
 		if strings.Contains(w, "gc import migrate") {
-			t.Errorf("warning %d = %q, should not mention gc import migrate", i, w)
+			t.Errorf("warning %d = %q, should not recommend gc import migrate", i, w)
 		}
 	}
 }

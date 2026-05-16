@@ -1,4 +1,4 @@
-# gc import migrate is now a deprecated shim that points users at gc doctor.
+# gc import migrate is now a deprecated compatibility shim.
 
 env GC_SESSION=fake
 env GC_BEADS=file
@@ -6,24 +6,21 @@ env GC_DOLT=skip
 
 cd $WORK/legacy-city
 
-# Dry-run no longer migrates in place; it fails with doctor guidance.
 ! exec gc import migrate --dry-run
-stderr 'retired as a PackV1 migration path'
-stderr 'Run `gc doctor` to inventory legacy PackV1 surfaces'
-stderr 'Run `gc doctor --fix` only for safe mechanical remediation'
+stderr 'gc import migrate has been deprecated\.'
+stderr 'Use "gc doctor" to inspect legacy PackV1 surfaces\.'
+stderr 'Use "gc doctor --fix" for the safe mechanical cases that currently have automatic rewrites'
+stderr 'no longer performs in-place PackV1-to-PackV2 rewrites'
+stderr 'docs/guides/migrating-to-pack-vnext.md'
 ! exists $WORK/legacy-city/pack.toml
-! exists $WORK/legacy-city/agents
 exec grep '\[\[agent\]\]' $WORK/legacy-city/city.toml
 
-# Real invocation is the same shim.
 ! exec gc import migrate
-stderr 'retired as a PackV1 migration path'
-stderr 'Run `gc doctor` to inventory legacy PackV1 surfaces'
-stderr 'Run `gc doctor --fix` only for safe mechanical remediation'
+stderr 'gc import migrate has been deprecated\.'
+stderr 'gc doctor --fix'
+stderr 'no longer performs in-place PackV1-to-PackV2 rewrites'
 ! exists $WORK/legacy-city/pack.toml
-! exists $WORK/legacy-city/agents
-exec grep '\[\[agent\]\]' $WORK/legacy-city/city.toml
-exec grep '^includes =' $WORK/legacy-city/city.toml
+exec grep '^includes = ' $WORK/legacy-city/city.toml
 exec grep 'default_rig_includes = \["../packs/default rig"\]' $WORK/legacy-city/city.toml
 
 -- legacy-city/city.toml --

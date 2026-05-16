@@ -11,11 +11,15 @@ func newImportMigrateCmd(stdout, stderr io.Writer) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:        "migrate",
-		Short:      "Deprecated PackV1 migration shim",
-		Long:       "Deprecated PackV1 migration shim. Use gc doctor for migration guidance.",
+		Short:      "Deprecated compatibility shim for legacy migration",
 		Hidden:     true,
-		Deprecated: "use `gc doctor` for migration guidance instead",
-		Args:       cobra.NoArgs,
+		Deprecated: `use "gc doctor" and "gc doctor --fix"`,
+		Long: `Deprecated compatibility shim.
+
+Use "gc doctor" to inspect legacy PackV1 surfaces and
+"gc doctor --fix" for the safe mechanical cases that currently have
+automatic rewrites.`,
+		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if doImportMigrate(dryRun, stdout, stderr) != 0 {
 				return errExit
@@ -23,17 +27,16 @@ func newImportMigrateCmd(stdout, stderr io.Writer) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would change without writing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "deprecated no-op compatibility flag")
 	return cmd
 }
 
 func doImportMigrate(dryRun bool, _ io.Writer, stderr io.Writer) int {
-	commandName := "gc import migrate"
-	if dryRun {
-		commandName += " --dry-run"
-	}
-	fmt.Fprintf(stderr, "%s has been retired as a PackV1 migration path.\n", commandName)                                               //nolint:errcheck // best-effort stderr
-	fmt.Fprintln(stderr, "Run `gc doctor` to inventory legacy PackV1 surfaces and current PackV2 requirements.")                        //nolint:errcheck // best-effort stderr
-	fmt.Fprintln(stderr, "Run `gc doctor --fix` only for safe mechanical remediation; PackV1 layouts are no longer upgraded in place.") //nolint:errcheck // best-effort stderr
+	_ = dryRun
+	fmt.Fprintln(stderr, "gc import migrate has been deprecated.")                                                                                 //nolint:errcheck // best-effort stderr
+	fmt.Fprintln(stderr, `Use "gc doctor" to inspect legacy PackV1 surfaces.`)                                                                     //nolint:errcheck // best-effort stderr
+	fmt.Fprintln(stderr, `Use "gc doctor --fix" for the safe mechanical cases that currently have automatic rewrites, then rerun "gc doctor".`)    //nolint:errcheck // best-effort stderr
+	fmt.Fprintln(stderr, `This shim no longer performs in-place PackV1-to-PackV2 rewrites.`)                                                       //nolint:errcheck // best-effort stderr
+	fmt.Fprintln(stderr, `See docs/guides/migrating-to-pack-vnext.md for the remaining manual migration steps and repo-content cleanup guidance.`) //nolint:errcheck // best-effort stderr
 	return 1
 }

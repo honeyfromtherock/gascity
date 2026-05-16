@@ -251,6 +251,7 @@ export type Bead = {
     created_at: string;
     dependencies?: Array<Dep> | null;
     description?: string;
+    ephemeral?: boolean;
     from?: string;
     id: string;
     issue_type: string;
@@ -747,7 +748,7 @@ export type EventEmitRequest = {
     type: string;
 };
 
-export type EventPayload = AdapterEventPayload | BeadEventPayload | BoundEventPayload | CityCreateSucceededPayload | CityLifecyclePayload | CityUnregisterSucceededPayload | GroupCreatedEventPayload | InboundEventPayload | MailEventPayload | NoPayload | OutboundEventPayload | RequestFailedPayload | SessionCreateSucceededPayload | SessionLifecyclePayload | SessionMessageSucceededPayload | SessionSubmitSucceededPayload | UnboundEventPayload | WorkerOperationEventPayload;
+export type EventPayload = AdapterEventPayload | BeadEventPayload | BoundEventPayload | CityCreateSucceededPayload | CityLifecyclePayload | CityUnregisterSucceededPayload | GroupCreatedEventPayload | InboundEventPayload | MailEventPayload | NoPayload | OutboundEventPayload | ProjectIdentityStampedPayload | RequestFailedPayload | RotatedPayload | SessionCreateSucceededPayload | SessionLifecyclePayload | SessionMessageSucceededPayload | SessionSubmitSucceededPayload | SupervisorFsPressureSkippedTickPayload | UnboundEventPayload | WorkerOperationEventPayload;
 
 export type EventStreamEnvelope = {
     actor: string;
@@ -1821,6 +1822,14 @@ export type PoolOverride = {
     OnDeath: string | null;
 };
 
+export type ProjectIdentityStampedPayload = {
+    layer: string;
+    new_id: string;
+    old_id?: string;
+    scope_root: string;
+    source: string;
+};
+
 export type ProviderCreateInputBody = {
     /**
      * ACP transport command arguments override.
@@ -1900,6 +1909,7 @@ export type ProviderOptionDto = {
 export type ProviderPatch = {
     ACPArgs: Array<string> | null;
     ACPCommand: string | null;
+    AcceptStartupDialogs: boolean | null;
     Args: Array<string> | null;
     ArgsAppend: Array<string> | null;
     Base: string | null;
@@ -1917,6 +1927,10 @@ export type ProviderPatch = {
 };
 
 export type ProviderPatchSetInputBody = {
+    /**
+     * Override startup dialog acceptance behavior.
+     */
+    accept_startup_dialogs?: boolean;
     /**
      * Override ACP transport command arguments.
      */
@@ -2239,6 +2253,12 @@ export type RigUpdateInputBody = {
      * Whether rig is suspended.
      */
     suspended?: boolean;
+};
+
+export type RotatedPayload = {
+    prior_archive: string;
+    prior_first_seq: number;
+    prior_last_seq: number;
 };
 
 export type ScopeGroup = {
@@ -2784,6 +2804,33 @@ export type SupervisorEventListOutputBody = {
     total: number;
 };
 
+export type SupervisorFsPressureSkippedTickPayload = {
+    /**
+     * The Linux PSI some avg60 value observed for filesystem IO pressure.
+     */
+    avg60: number;
+    /**
+     * Number of consecutive pressure skips including this tick.
+     */
+    consecutive_skips: number;
+    /**
+     * Maximum consecutive skips before the supervisor forces one reconciliation tick.
+     */
+    max_consecutive_skips: number;
+    /**
+     * The pressure decision outcome: skipped for a shed tick or forced for the bounded liveness tick.
+     */
+    outcome: string;
+    /**
+     * The configured avg60 threshold that triggered the skip.
+     */
+    threshold: number;
+    /**
+     * The daemon tick trigger, such as patrol or poke.
+     */
+    trigger?: string;
+};
+
 export type SupervisorHealthOutputBody = {
     /**
      * Cities currently running.
@@ -2876,6 +2923,8 @@ export type TypedEventStreamEnvelope = ({
 } & TypedEventStreamEnvelopeConvoyClosed) | ({
     type: 'convoy.created';
 } & TypedEventStreamEnvelopeConvoyCreated) | ({
+    type: 'events.rotated';
+} & TypedEventStreamEnvelopeEventsRotated) | ({
     type: 'extmsg.adapter_added';
 } & TypedEventStreamEnvelopeExtmsgAdapterAdded) | ({
     type: 'extmsg.adapter_removed';
@@ -2910,6 +2959,8 @@ export type TypedEventStreamEnvelope = ({
 } & TypedEventStreamEnvelopeOrderFailed) | ({
     type: 'order.fired';
 } & TypedEventStreamEnvelopeOrderFired) | ({
+    type: 'project.identity.stamped';
+} & TypedEventStreamEnvelopeProjectIdentityStamped) | ({
     type: 'provider.swapped';
 } & TypedEventStreamEnvelopeProviderSwapped) | ({
     type: 'request.failed';
@@ -2944,6 +2995,8 @@ export type TypedEventStreamEnvelope = ({
 } & TypedEventStreamEnvelopeSessionUpdated) | ({
     type: 'session.woke';
 } & TypedEventStreamEnvelopeSessionWoke) | ({
+    type: 'supervisor.fs_pressure.skipped_tick';
+} & TypedEventStreamEnvelopeSupervisorFsPressureSkippedTick) | ({
     type: 'worker.operation';
 } & TypedEventStreamEnvelopeWorkerOperation) | ({
     type: 'TypedEventStreamEnvelopeCustom';
@@ -3114,6 +3167,20 @@ export type TypedEventStreamEnvelopeCustom = {
     subject?: string;
     ts: string;
     type: string;
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope events.rotated
+ */
+export type TypedEventStreamEnvelopeEventsRotated = {
+    actor: string;
+    message?: string;
+    payload: RotatedPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'events.rotated';
     workflow?: WorkflowEventProjection;
 };
 
@@ -3356,6 +3423,20 @@ export type TypedEventStreamEnvelopeOrderFired = {
 };
 
 /**
+ * TypedEventStreamEnvelope project.identity.stamped
+ */
+export type TypedEventStreamEnvelopeProjectIdentityStamped = {
+    actor: string;
+    message?: string;
+    payload: ProjectIdentityStampedPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'project.identity.stamped';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
  * TypedEventStreamEnvelope provider.swapped
  */
 export type TypedEventStreamEnvelopeProviderSwapped = {
@@ -3594,6 +3675,20 @@ export type TypedEventStreamEnvelopeSessionWoke = {
 };
 
 /**
+ * TypedEventStreamEnvelope supervisor.fs_pressure.skipped_tick
+ */
+export type TypedEventStreamEnvelopeSupervisorFsPressureSkippedTick = {
+    actor: string;
+    message?: string;
+    payload: SupervisorFsPressureSkippedTickPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'supervisor.fs_pressure.skipped_tick';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
  * TypedEventStreamEnvelope worker.operation
  */
 export type TypedEventStreamEnvelopeWorkerOperation = {
@@ -3635,6 +3730,8 @@ export type TypedTaggedEventStreamEnvelope = ({
 } & TypedTaggedEventStreamEnvelopeConvoyClosed) | ({
     type: 'convoy.created';
 } & TypedTaggedEventStreamEnvelopeConvoyCreated) | ({
+    type: 'events.rotated';
+} & TypedTaggedEventStreamEnvelopeEventsRotated) | ({
     type: 'extmsg.adapter_added';
 } & TypedTaggedEventStreamEnvelopeExtmsgAdapterAdded) | ({
     type: 'extmsg.adapter_removed';
@@ -3669,6 +3766,8 @@ export type TypedTaggedEventStreamEnvelope = ({
 } & TypedTaggedEventStreamEnvelopeOrderFailed) | ({
     type: 'order.fired';
 } & TypedTaggedEventStreamEnvelopeOrderFired) | ({
+    type: 'project.identity.stamped';
+} & TypedTaggedEventStreamEnvelopeProjectIdentityStamped) | ({
     type: 'provider.swapped';
 } & TypedTaggedEventStreamEnvelopeProviderSwapped) | ({
     type: 'request.failed';
@@ -3703,6 +3802,8 @@ export type TypedTaggedEventStreamEnvelope = ({
 } & TypedTaggedEventStreamEnvelopeSessionUpdated) | ({
     type: 'session.woke';
 } & TypedTaggedEventStreamEnvelopeSessionWoke) | ({
+    type: 'supervisor.fs_pressure.skipped_tick';
+} & TypedTaggedEventStreamEnvelopeSupervisorFsPressureSkippedTick) | ({
     type: 'worker.operation';
 } & TypedTaggedEventStreamEnvelopeWorkerOperation) | ({
     type: 'TypedTaggedEventStreamEnvelopeCustom';
@@ -3885,6 +3986,21 @@ export type TypedTaggedEventStreamEnvelopeCustom = {
     subject?: string;
     ts: string;
     type: string;
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope events.rotated
+ */
+export type TypedTaggedEventStreamEnvelopeEventsRotated = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: RotatedPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'events.rotated';
     workflow?: WorkflowEventProjection;
 };
 
@@ -4144,6 +4260,21 @@ export type TypedTaggedEventStreamEnvelopeOrderFired = {
 };
 
 /**
+ * TypedTaggedEventStreamEnvelope project.identity.stamped
+ */
+export type TypedTaggedEventStreamEnvelopeProjectIdentityStamped = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: ProjectIdentityStampedPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'project.identity.stamped';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
  * TypedTaggedEventStreamEnvelope provider.swapped
  */
 export type TypedTaggedEventStreamEnvelopeProviderSwapped = {
@@ -4395,6 +4526,21 @@ export type TypedTaggedEventStreamEnvelopeSessionWoke = {
     subject?: string;
     ts: string;
     type: 'session.woke';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope supervisor.fs_pressure.skipped_tick
+ */
+export type TypedTaggedEventStreamEnvelopeSupervisorFsPressureSkippedTick = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: SupervisorFsPressureSkippedTickPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'supervisor.fs_pressure.skipped_tick';
     workflow?: WorkflowEventProjection;
 };
 

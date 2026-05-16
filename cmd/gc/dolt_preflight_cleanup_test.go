@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -63,8 +65,11 @@ func TestFileOpenedByAnyProcessBoundsLsof(t *testing.T) {
 	if err := os.WriteFile(path, []byte("stale\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	withManagedDoltProcPaths(t, filepath.Join(t.TempDir(), "missing-proc"), filepath.Join(t.TempDir(), "missing-unix"))
 	binDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(binDir, "lsof"), []byte("#!/bin/sh\nexec sleep 10\n"), 0o755); err != nil {
+	marker := filepath.Join(t.TempDir(), "lsof-ran")
+	t.Setenv("LSOF_MARKER", marker)
+	if err := os.WriteFile(filepath.Join(binDir, "lsof"), []byte("#!/bin/sh\ntouch \"$LSOF_MARKER\"\nexec sleep 10\n"), 0o755); err != nil {
 		t.Fatalf("WriteFile(lsof): %v", err)
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -77,8 +82,162 @@ func TestFileOpenedByAnyProcessBoundsLsof(t *testing.T) {
 	if open {
 		t.Fatal("fileOpenedByAnyProcess() = true, want false when lsof times out")
 	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("fake lsof did not run: %v", err)
+	}
 	if elapsed := time.Since(start); elapsed > 4*time.Second {
 		t.Fatalf("fileOpenedByAnyProcess() took %s, want bounded timeout", elapsed)
+	}
+}
+
+func TestFileOpenedByAnyProcessUsesUnixSocketTableForStaleSocket(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "dolt.sock")
+	fd, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+	if err != nil {
+		t.Fatalf("socket(AF_UNIX): %v", err)
+	}
+	if err := syscall.Bind(fd, &syscall.SockaddrUnix{Name: socketPath}); err != nil {
+		_ = syscall.Close(fd)
+		t.Fatalf("bind unix socket: %v", err)
+	}
+	if err := syscall.Listen(fd, 1); err != nil {
+		_ = syscall.Close(fd)
+		t.Fatalf("listen unix socket: %v", err)
+	}
+	if err := syscall.Close(fd); err != nil {
+		t.Fatalf("close unix socket: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Remove(socketPath) })
+	if info, err := os.Lstat(socketPath); err != nil || info.Mode()&os.ModeSocket == 0 {
+		if err != nil {
+			t.Fatalf("socket precondition stat: %v", err)
+		}
+		t.Fatalf("socket precondition mode = %v, want socket", info.Mode())
+	}
+
+	unixTable := filepath.Join(t.TempDir(), "unix")
+	if err := os.WriteFile(unixTable, []byte("Num RefCount Protocol Flags Type St Inode Path\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(unix table): %v", err)
+	}
+	withManagedDoltProcPaths(t, filepath.Join(t.TempDir(), "missing-proc"), unixTable)
+	binDir := t.TempDir()
+	marker := filepath.Join(t.TempDir(), "lsof-ran")
+	t.Setenv("LSOF_MARKER", marker)
+	if err := os.WriteFile(filepath.Join(binDir, "lsof"), []byte("#!/bin/sh\ntouch \"$LSOF_MARKER\"\nexec sleep 10\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile(lsof): %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	open, err := fileOpenedByAnyProcess(socketPath)
+	if err != nil {
+		t.Fatalf("fileOpenedByAnyProcess() error = %v, want nil", err)
+	}
+	if open {
+		t.Fatal("fileOpenedByAnyProcess() = true, want false for socket absent from checked unix socket table")
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("lsof marker stat err = %v, want not exist", err)
+	}
+}
+
+func TestFileOpenedByAnyProcessFromProcHonorsCancelledContext(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "LOCK")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	start := time.Now()
+	open, checked := fileOpenedByAnyProcessFromProc(ctx, path)
+	if open || checked {
+		t.Fatalf("fileOpenedByAnyProcessFromProc(canceled) = (%v, %v), want false, false", open, checked)
+	}
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		t.Fatalf("fileOpenedByAnyProcessFromProc(canceled) took %s, want immediate cancellation", elapsed)
+	}
+}
+
+func TestUnixSocketInodesForPathHonorsCancelledContext(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "dolt.sock")
+	unixTable := filepath.Join(t.TempDir(), "unix")
+	if err := os.WriteFile(unixTable, []byte("Num RefCount Protocol Flags Type St Inode Path\n0000000000000000: 00000002 00000000 00010000 0001 01 12345 "+socketPath+"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(unix table): %v", err)
+	}
+	withManagedDoltProcPaths(t, t.TempDir(), unixTable)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	inodes, checked := unixSocketInodesForPath(ctx, socketPath)
+	if checked || len(inodes) != 0 {
+		t.Fatalf("unixSocketInodesForPath(canceled) = (%v, %v), want nil/empty, false", inodes, checked)
+	}
+}
+
+func TestFileOpenedByAnyProcessFromProcDetectsBoundSocketFromUnixTable(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "dolt.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("net.Listen(unix): %v", err)
+	}
+	defer func() {
+		_ = listener.Close()
+		_ = os.Remove(socketPath)
+	}()
+	unixTable := filepath.Join(t.TempDir(), "unix")
+	if err := os.WriteFile(unixTable, []byte("Num RefCount Protocol Flags Type St Inode Path\n0000000000000000: 00000002 00000000 00010000 0001 01 12345 "+socketPath+"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(unix table): %v", err)
+	}
+	withManagedDoltProcPaths(t, t.TempDir(), unixTable)
+
+	open, checked := fileOpenedByAnyProcessFromProc(context.Background(), socketPath)
+	if !open || !checked {
+		t.Fatalf("fileOpenedByAnyProcessFromProc(bound socket) = (%v, %v), want true, true", open, checked)
+	}
+}
+
+func TestFileOpenedByAnyProcessFromProcTreatsUnlistedSocketAsClosed(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "dolt.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("net.Listen(unix): %v", err)
+	}
+	if err := listener.Close(); err != nil {
+		t.Fatalf("Close(listener): %v", err)
+	}
+	t.Cleanup(func() { _ = os.Remove(socketPath) })
+	unixTable := filepath.Join(t.TempDir(), "unix")
+	if err := os.WriteFile(unixTable, []byte("Num RefCount Protocol Flags Type St Inode Path\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(unix table): %v", err)
+	}
+	withManagedDoltProcPaths(t, t.TempDir(), unixTable)
+
+	open, checked := fileOpenedByAnyProcessFromProc(context.Background(), socketPath)
+	if open || !checked {
+		t.Fatalf("fileOpenedByAnyProcessFromProc(unlisted socket) = (%v, %v), want false, true", open, checked)
+	}
+}
+
+func TestFileOpenedByAnyProcessFromProcFallsBackWhenUnixTableUnreadable(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "dolt.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("net.Listen(unix): %v", err)
+	}
+	if err := listener.Close(); err != nil {
+		t.Fatalf("Close(listener): %v", err)
+	}
+	t.Cleanup(func() { _ = os.Remove(socketPath) })
+	procDir := t.TempDir()
+	fdDir := filepath.Join(procDir, "123", "fd")
+	if err := os.MkdirAll(fdDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(socketPath, filepath.Join(fdDir, "7")); err != nil {
+		t.Fatalf("Symlink(fd): %v", err)
+	}
+	withManagedDoltProcPaths(t, procDir, filepath.Join(t.TempDir(), "missing-unix"))
+
+	open, checked := fileOpenedByAnyProcessFromProc(context.Background(), socketPath)
+	if !open || !checked {
+		t.Fatalf("fileOpenedByAnyProcessFromProc(fd fallback) = (%v, %v), want true, true", open, checked)
 	}
 }
 
@@ -100,4 +259,16 @@ func TestRemoveStaleManagedDoltSocketsWithoutLsofKeepsSocket(t *testing.T) {
 	if _, err := os.Stat(socketPath); err != nil {
 		t.Fatalf("socket stat err = %v, want preserved when lsof unavailable", err)
 	}
+}
+
+func withManagedDoltProcPaths(t *testing.T, procDir, unixSocketTable string) {
+	t.Helper()
+	oldProcDir := managedDoltProcDir
+	oldUnixSocketTable := managedDoltUnixSocketTable
+	managedDoltProcDir = procDir
+	managedDoltUnixSocketTable = unixSocketTable
+	t.Cleanup(func() {
+		managedDoltProcDir = oldProcDir
+		managedDoltUnixSocketTable = oldUnixSocketTable
+	})
 }

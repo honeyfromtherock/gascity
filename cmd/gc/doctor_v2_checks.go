@@ -66,13 +66,13 @@ func (v2ImportFormatCheck) Fix(ctx *doctor.CheckContext) error {
 
 func (v2ImportFormatCheck) Run(ctx *doctor.CheckContext) *doctor.CheckResult {
 	cfg, ok := parseCityConfig(filepath.Join(ctx.CityPath, "city.toml"))
-	if !ok || len(cfg.Workspace.Includes) == 0 {
+	if !ok || len(cfg.Workspace.LegacyIncludes()) == 0 {
 		return okCheck("v2-import-format", "workspace.includes already migrated")
 	}
 	return errorCheck("v2-import-format",
 		"unsupported PackV1 workspace.includes found; migrate this city to [imports] before gc can load it",
 		"replace workspace.includes with [imports.<binding>] entries; gc doctor does not rewrite import bindings automatically in this wave",
-		cfg.Workspace.Includes)
+		cfg.Workspace.LegacyIncludes())
 }
 
 type v2DefaultRigImportFormatCheck struct{}
@@ -85,13 +85,13 @@ func (v2DefaultRigImportFormatCheck) Fix(ctx *doctor.CheckContext) error {
 
 func (v2DefaultRigImportFormatCheck) Run(ctx *doctor.CheckContext) *doctor.CheckResult {
 	cfg, ok := parseCityConfig(filepath.Join(ctx.CityPath, "city.toml"))
-	if !ok || len(cfg.Workspace.DefaultRigIncludes) == 0 {
+	if !ok || len(cfg.Workspace.LegacyDefaultRigIncludes()) == 0 {
 		return okCheck("v2-default-rig-import-format", "workspace.default_rig_includes already migrated")
 	}
 	return errorCheck("v2-default-rig-import-format",
 		"unsupported PackV1 workspace.default_rig_includes found; migrate to root pack.toml [defaults.rig.imports.<binding>]",
 		`move each entry into root pack.toml [defaults.rig.imports.<binding>]`,
-		cfg.Workspace.DefaultRigIncludes)
+		cfg.Workspace.LegacyDefaultRigIncludes())
 }
 
 type v2RigPathSiteBindingCheck struct{}
@@ -475,6 +475,10 @@ func errorCheck(name, message, hint string, details []string) *doctor.CheckResul
 		FixHint: hint,
 		Details: details,
 	}
+}
+
+func v2MigrationHint() string {
+	return `run "gc doctor" to inspect; use "gc doctor --fix" for the safe mechanical cases that currently have automatic rewrites, then rerun "gc doctor"`
 }
 
 // runV2PackMigration applies the pack-shape migration (legacy [[agent]]
