@@ -65,6 +65,7 @@ func discoverFlatFiles(fs fsys.FS, dir string, found map[string]Order, add func(
 		}
 		return fmt.Errorf("reading order root %s: %w", dir, err)
 	}
+	pickedInfixed := make(map[string]bool)
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -74,9 +75,12 @@ func discoverFlatFiles(fs fsys.FS, dir string, found map[string]Order, add func(
 		if !ok {
 			continue
 		}
+		infixed := fileName == name+LegacyFlatOrderSuffix
 		source := filepath.Join(dir, fileName)
 		if _, exists := found[name]; exists {
-			continue
+			if infixed || !pickedInfixed[name] {
+				continue
+			}
 		}
 		data, err := fs.ReadFile(source)
 		if err != nil {
@@ -88,6 +92,7 @@ func discoverFlatFiles(fs fsys.FS, dir string, found map[string]Order, add func(
 		if err := add(name, source, data); err != nil {
 			return err
 		}
+		pickedInfixed[name] = infixed
 	}
 	return nil
 }

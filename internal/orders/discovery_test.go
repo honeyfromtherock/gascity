@@ -84,7 +84,7 @@ schedule = "*/5 * * * *"
 	}
 }
 
-func TestDiscoverRootAcceptsLegacyFlatOrderFilename(t *testing.T) {
+func TestDiscoverRootAcceptsInfixedFlatOrderFilename(t *testing.T) {
 	fs := fsys.NewFake()
 	fs.Files["/pack/orders/health-check.order.toml"] = []byte(`
 [order]
@@ -107,7 +107,41 @@ schedule = "*/5 * * * *"
 		t.Fatalf("Name = %q, want health-check", orders[0].Name)
 	}
 	if orders[0].Source != "/pack/orders/health-check.order.toml" {
-		t.Fatalf("Source = %q, want legacy flat source", orders[0].Source)
+		t.Fatalf("Source = %q, want infixed flat source", orders[0].Source)
+	}
+}
+
+func TestDiscoverRootPlainFlatOrderBeatsInfixedSibling(t *testing.T) {
+	fs := fsys.NewFake()
+	fs.Files["/pack/orders/health-check.order.toml"] = []byte(`
+[order]
+formula = "infixed"
+trigger = "manual"
+`)
+	fs.Files["/pack/orders/health-check.toml"] = []byte(`
+[order]
+formula = "plain"
+trigger = "manual"
+`)
+
+	orders, err := discoverRoot(fs, ScanRoot{
+		Dir:          "/pack/orders",
+		FormulaLayer: "/pack/formulas",
+	})
+	if err != nil {
+		t.Fatalf("discoverRoot: %v", err)
+	}
+	if len(orders) != 1 {
+		t.Fatalf("got %d orders, want 1", len(orders))
+	}
+	if orders[0].Name != "health-check" {
+		t.Fatalf("Name = %q, want health-check", orders[0].Name)
+	}
+	if orders[0].Formula != "plain" {
+		t.Fatalf("Formula = %q, want plain spelling to win", orders[0].Formula)
+	}
+	if orders[0].Source != "/pack/orders/health-check.toml" {
+		t.Fatalf("Source = %q, want plain flat source", orders[0].Source)
 	}
 }
 
