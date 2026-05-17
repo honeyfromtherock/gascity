@@ -10,9 +10,9 @@ import (
 	"github.com/gastownhall/gascity/internal/fsys"
 )
 
-// discoverRoot discovers orders for one logical root. Wave 2 requires the
-// canonical flat orders/<name>.toml layout and hard-errors when older PackV1
-// order paths are still present.
+// discoverRoot discovers orders for one logical root. Wave 2 requires flat
+// order files and hard-errors when older PackV1 subdirectory order paths are
+// still present.
 func discoverRoot(fs fsys.FS, root ScanRoot) ([]Order, error) {
 	return discoverRootWithOptions(fs, root, ScanOptions{})
 }
@@ -74,11 +74,7 @@ func discoverFlatFiles(fs fsys.FS, dir string, found map[string]Order, add func(
 		if !ok {
 			continue
 		}
-		legacy := fileName == name+LegacyFlatOrderSuffix
 		source := filepath.Join(dir, fileName)
-		if legacy {
-			return fmt.Errorf("unsupported PackV1 order path %s; rename to orders/%s.toml", source, name)
-		}
 		if _, exists := found[name]; exists {
 			continue
 		}

@@ -81,14 +81,8 @@ func defaultSearchPaths() []string {
 }
 
 // ParseFile parses a formula from a file path.
-// Supported extensions are .toml and .formula.json. Legacy .formula.toml
-// paths hard-error with a migration hint.
+// Supported extensions are .toml, .formula.toml, and .formula.json.
 func (p *Parser) ParseFile(path string) (*Formula, error) {
-	if strings.HasSuffix(path, FormulaLegacyExtTOML) {
-		base := strings.TrimSuffix(filepath.Base(path), FormulaLegacyExtTOML)
-		return nil, fmt.Errorf("unsupported PackV1 formula path %s; rename to %s%s", path, base, FormulaExtTOML)
-	}
-
 	// Check cache first
 	absPath, err := filepath.Abs(path)
 	if err != nil {
@@ -297,9 +291,6 @@ func (p *Parser) loadFormula(name string) (*Formula, error) {
 	path, ok := Resolve(p.searchPaths, name)
 	if !ok {
 		return nil, fmt.Errorf("formula %q not found in search paths", name)
-	}
-	if strings.HasSuffix(path, FormulaLegacyExtTOML) {
-		return nil, fmt.Errorf("unsupported PackV1 formula path %s; rename to %s%s", path, name, FormulaExtTOML)
 	}
 	return p.ParseFile(path)
 }

@@ -477,10 +477,6 @@ func errorCheck(name, message, hint string, details []string) *doctor.CheckResul
 	}
 }
 
-func v2MigrationHint() string {
-	return `run "gc doctor" to inspect; use "gc doctor --fix" for the safe mechanical cases that currently have automatic rewrites, then rerun "gc doctor"`
-}
-
 // runV2PackMigration applies the pack-shape migration (legacy [[agent]]
 // tables, workspace.includes, default_rig_includes) for a doctor --fix run.
 // It is safe to call from multiple checks: migrate.Apply is idempotent on a
