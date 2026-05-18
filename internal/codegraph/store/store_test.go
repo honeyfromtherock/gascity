@@ -19,7 +19,7 @@ func TestOpenWriteReadCheckpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	tx := conn.Begin()
-	for i := int64(0); i < 100; i++ {
+	for i := range int64(100) {
 		if _, err := tx.Exec("CREATE (n:T {id:$id, name:$name});",
 			map[string]any{"id": i, "name": "row"}); err != nil {
 			t.Fatal(err)

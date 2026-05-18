@@ -62,6 +62,7 @@ func (d *DB) Checkpoint() error {
 
 // Close closes the database. It is safe to call Close multiple times.
 func (d *DB) Close() error {
+	// inner.Close is void in lbug; we return nil to match the io.Closer convention.
 	d.inner.Close()
 	return nil
 }
@@ -84,7 +85,7 @@ func (c *Conn) Exec(cypher string, params ...map[string]any) (*lbug.QueryResult,
 	if err != nil {
 		return nil, err
 	}
-	defer prep.Close()
+	defer func() { prep.Close() }()
 	return c.inner.Execute(prep, params[0])
 }
 
@@ -105,6 +106,7 @@ func (c *Conn) Begin() *Tx {
 
 // Close closes the connection. It is safe to call Close multiple times.
 func (c *Conn) Close() error {
+	// inner.Close is void in lbug; we return nil to match the io.Closer convention.
 	c.inner.Close()
 	return nil
 }
