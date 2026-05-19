@@ -5,6 +5,7 @@ package store
 
 import (
 	"fmt"
+	"runtime"
 
 	lbug "github.com/ladybugdb/go-ladybug"
 )
@@ -77,16 +78,34 @@ type Conn struct{ inner *lbug.Connection }
 // Exec executes a Cypher statement, optionally with named parameters.
 // If params are supplied the statement is prepared and executed with
 // parameter binding; otherwise it is executed directly.
+//
+// When an error is returned, Exec suppresses the GC finalizer on the
+// error-state QueryResult to avoid a cgo crash if the caller ignores the
+// result (common pattern: _, err := conn.Exec(...)). Callers that
+// explicitly receive the QueryResult on an error path are responsible for
+// not calling Close() on it.
 func (c *Conn) Exec(cypher string, params ...map[string]any) (*lbug.QueryResult, error) {
+	var (
+		res *lbug.QueryResult
+		err error
+	)
 	if len(params) == 0 {
-		return c.inner.Query(cypher)
+		res, err = c.inner.Query(cypher)
+	} else {
+		prep, prepErr := c.inner.Prepare(cypher)
+		if prepErr != nil {
+			return nil, prepErr
+		}
+		defer func() { prep.Close() }()
+		res, err = c.inner.Execute(prep, params[0])
 	}
-	prep, err := c.inner.Prepare(cypher)
-	if err != nil {
-		return nil, err
+	if err != nil && res != nil {
+		// Suppress the GC finalizer on the error-state C result; calling
+		// lbug_query_result_destroy on an error QueryResult crashes on
+		// some platform/version combinations of LadybugDB.
+		runtime.SetFinalizer(res, nil)
 	}
-	defer func() { prep.Close() }()
-	return c.inner.Execute(prep, params[0])
+	return res, err
 }
 
 // Query is an alias for Exec — both return a QueryResult.

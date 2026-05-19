@@ -104,6 +104,9 @@ func Full(db *store.DB, parquetDir string, prof schema.Profile) error {
 	if _, err := conn.Exec("CHECKPOINT;"); err != nil {
 		return fmt.Errorf("checkpoint: %w", err)
 	}
+	if err := BuildIndexes(conn); err != nil {
+		return err
+	}
 	return nil
 }
 
