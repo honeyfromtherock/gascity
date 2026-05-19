@@ -17,9 +17,10 @@ import (
 // For Phase 1 sizes (a few million rows max) memory is fine; Phase 5 will
 // stream if needed.
 type Writers struct {
-	outDir string
-	nodes  map[facts.NodeKind][]map[string]any
-	edges  map[facts.EdgeKind][]map[string]any
+	outDir   string
+	nodes    map[facts.NodeKind][]map[string]any
+	edges    map[facts.EdgeKind][]map[string]any
+	seenURNs map[facts.NodeKind]map[string]bool
 }
 
 // NewWriters constructs a Writers rooted at outDir. Call AddNode/AddEdge
@@ -27,14 +28,28 @@ type Writers struct {
 // table under outDir/nodes/ and outDir/rels/.
 func NewWriters(outDir string) *Writers {
 	return &Writers{
-		outDir: outDir,
-		nodes:  map[facts.NodeKind][]map[string]any{},
-		edges:  map[facts.EdgeKind][]map[string]any{},
+		outDir:   outDir,
+		nodes:    map[facts.NodeKind][]map[string]any{},
+		edges:    map[facts.EdgeKind][]map[string]any{},
+		seenURNs: map[facts.NodeKind]map[string]bool{},
 	}
 }
 
-// AddNode buffers a NodeFact for later flush.
+// AddNode buffers a NodeFact for later flush. Duplicate URNs per kind are
+// silently dropped — the indexer emits the same Module/File from multiple
+// shards, and LadybugDB's COPY rejects duplicate primary keys.
 func (w *Writers) AddNode(n facts.NodeFact) {
+	seen, ok := w.seenURNs[n.Kind]
+	if !ok {
+		seen = map[string]bool{}
+		w.seenURNs[n.Kind] = seen
+	}
+	if n.URN != "" {
+		if seen[n.URN] {
+			return
+		}
+		seen[n.URN] = true
+	}
 	w.nodes[n.Kind] = append(w.nodes[n.Kind], n.Props)
 }
 

@@ -38,6 +38,10 @@ func main() {
 	must(err)
 	log.Printf("[discover] langs=%v root=%s", rig.Langs, rig.Root)
 
+	if err := os.MkdirAll(*out, 0o755); err != nil {
+		log.Fatalf("create out dir: %v", err)
+	}
+
 	pqDir := filepath.Join(*out, "shards")
 	if err := os.RemoveAll(pqDir); err != nil {
 		log.Fatalf("clean shards: %v", err)

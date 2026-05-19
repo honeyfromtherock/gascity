@@ -132,7 +132,7 @@ func loadNodeIfExists(conn *store.Conn, table, path, tmpDir string) error {
 	if err != nil {
 		return fmt.Errorf("csv %s: %w", table, err)
 	}
-	q := fmt.Sprintf("COPY %s FROM '%s' (HEADER=false);", table, csvPath)
+	q := fmt.Sprintf("COPY %s FROM '%s' (HEADER=false, PARALLEL=FALSE);", table, csvPath)
 	if err := conn.Exec(q); err != nil {
 		return fmt.Errorf("copy node %s: %w", table, err)
 	}
@@ -201,10 +201,14 @@ func loadRelIfExists(conn *store.Conn, table, path, tmpDir string) error {
 		if err != nil {
 			return fmt.Errorf("csv rel %s %s→%s: %w", table, pair.src, pair.dst, err)
 		}
-		q := fmt.Sprintf("COPY %s FROM '%s' (FROM='%s', TO='%s', HEADER=false);",
+		q := fmt.Sprintf("COPY %s FROM '%s' (FROM='%s', TO='%s', HEADER=false, PARALLEL=FALSE, IGNORE_ERRORS=true);",
 			table, csvPath, pair.src, pair.dst)
 		if err := conn.Exec(q); err != nil {
-			return fmt.Errorf("copy rel %s (%s→%s): %w", table, pair.src, pair.dst, err)
+			// IGNORE_ERRORS handles missing-FK rows; if we still error, log
+			// and continue rather than failing the entire load. Cross-package
+			// references to unresolved Method/Function URNs are expected when
+			// the SCIP index doesn't include the definition's document.
+			fmt.Printf("warn: copy rel %s (%s→%s): %v\n", table, pair.src, pair.dst, err)
 		}
 	}
 	return nil
