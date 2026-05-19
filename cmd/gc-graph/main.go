@@ -25,6 +25,8 @@ func main() {
 	switch os.Args[1] {
 	case "find":
 		os.Exit(cmdFind(os.Args[2:]))
+	case "callers":
+		os.Exit(cmdCallers(os.Args[2:]))
 	default:
 		usage()
 		os.Exit(2)
@@ -32,6 +34,6 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "gc graph {find} ...")
-	fmt.Fprintln(os.Stderr, "  (callers, blast, cypher, grep land in subsequent tasks)")
+	fmt.Fprintln(os.Stderr, "gc graph {find|callers} ...")
+	fmt.Fprintln(os.Stderr, "  (blast, cypher, grep land in subsequent tasks)")
 }
