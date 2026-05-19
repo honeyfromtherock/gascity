@@ -104,6 +104,10 @@ func (c *Conn) Begin() *Tx {
 	return &Tx{conn: c}
 }
 
+// Inner returns the underlying *lbug.Connection. Prefer using Exec/Query; this
+// escape hatch exists for packages (e.g. schema) that accept the raw type.
+func (c *Conn) Inner() *lbug.Connection { return c.inner }
+
 // Close closes the connection. It is safe to call Close multiple times.
 func (c *Conn) Close() error {
 	// inner.Close is void in lbug; we return nil to match the io.Closer convention.

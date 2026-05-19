@@ -78,13 +78,33 @@ func (w *Writers) Flush() error {
 }
 
 // schemaFromRow builds a parquet.Schema from the first row's key/value types.
-// All columns are optional to handle sparse rows gracefully.
+// String columns are optional (nullable); numeric and boolean columns are
+// required — LadybugDB's COPY treats optional INT32/FLOAT as BLOB.
 func schemaFromRow(row map[string]any) *parquetgo.Schema {
 	group := make(parquetgo.Group, len(row))
 	for k, v := range row {
-		group[k] = parquetgo.Optional(nodeForValue(v))
+		node := nodeForValue(v)
+		if isStringNode(v) {
+			node = parquetgo.Optional(node)
+		}
+		group[k] = node
 	}
 	return parquetgo.NewSchema("row", group)
+}
+
+// isStringNode returns true when v is a string (or nil) value, i.e. the column
+// should be optional (nullable) in Parquet. Numeric and boolean columns are
+// written as required so LadybugDB COPY can infer their native type.
+func isStringNode(v any) bool {
+	if v == nil {
+		return true
+	}
+	switch reflect.TypeOf(v).Kind() {
+	case reflect.String:
+		return true
+	default:
+		return false
+	}
 }
 
 // nodeForValue returns the appropriate parquet leaf Node for a Go value.
