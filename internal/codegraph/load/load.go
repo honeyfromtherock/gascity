@@ -101,7 +101,7 @@ func Full(db *store.DB, parquetDir string, prof schema.Profile) error {
 			return err
 		}
 	}
-	if _, err := conn.Exec("CHECKPOINT;"); err != nil {
+	if err := conn.Exec("CHECKPOINT;"); err != nil {
 		return fmt.Errorf("checkpoint: %w", err)
 	}
 	if err := BuildIndexes(conn); err != nil {
@@ -133,7 +133,7 @@ func loadNodeIfExists(conn *store.Conn, table, path, tmpDir string) error {
 		return fmt.Errorf("csv %s: %w", table, err)
 	}
 	q := fmt.Sprintf("COPY %s FROM '%s' (HEADER=false);", table, csvPath)
-	if _, err := conn.Exec(q); err != nil {
+	if err := conn.Exec(q); err != nil {
 		return fmt.Errorf("copy node %s: %w", table, err)
 	}
 	return nil
@@ -203,7 +203,7 @@ func loadRelIfExists(conn *store.Conn, table, path, tmpDir string) error {
 		}
 		q := fmt.Sprintf("COPY %s FROM '%s' (FROM='%s', TO='%s', HEADER=false);",
 			table, csvPath, pair.src, pair.dst)
-		if _, err := conn.Exec(q); err != nil {
+		if err := conn.Exec(q); err != nil {
 			return fmt.Errorf("copy rel %s (%s→%s): %w", table, pair.src, pair.dst, err)
 		}
 	}

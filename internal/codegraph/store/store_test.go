@@ -15,12 +15,12 @@ func TestOpenWriteReadCheckpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	conn := rw.Connect()
-	if _, err := conn.Exec("CREATE NODE TABLE T(id INT64 PRIMARY KEY, name STRING);"); err != nil {
+	if err := conn.Exec("CREATE NODE TABLE T(id INT64 PRIMARY KEY, name STRING);"); err != nil {
 		t.Fatal(err)
 	}
 	tx := conn.Begin()
 	for i := range int64(100) {
-		if _, err := tx.Exec("CREATE (n:T {id:$id, name:$name});",
+		if err := tx.Exec("CREATE (n:T {id:$id, name:$name});",
 			map[string]any{"id": i, "name": "row"}); err != nil {
 			t.Fatal(err)
 		}

@@ -5,7 +5,6 @@ package store
 
 import (
 	"fmt"
-	"runtime"
 
 	lbug "github.com/ladybugdb/go-ladybug"
 )
@@ -57,8 +56,7 @@ func (d *DB) Connect() *Conn {
 func (d *DB) Checkpoint() error {
 	c := d.Connect()
 	defer func() { _ = c.Close() }()
-	_, err := c.Exec("CHECKPOINT;")
-	return err
+	return c.Exec("CHECKPOINT;")
 }
 
 // Close closes the database. It is safe to call Close multiple times.
@@ -75,49 +73,45 @@ func (d *DB) Path() string { return d.path }
 // goroutine-safe; use one connection per goroutine.
 type Conn struct{ inner *lbug.Connection }
 
-// Exec executes a Cypher statement, optionally with named parameters.
-// If params are supplied the statement is prepared and executed with
-// parameter binding; otherwise it is executed directly.
+// Exec executes a Cypher statement, optionally with named parameters, and
+// discards the result. Use Query when you need to iterate over returned rows.
 //
-// When an error is returned, Exec suppresses the GC finalizer on the
-// error-state QueryResult to avoid a cgo crash if the caller ignores the
-// result (common pattern: _, err := conn.Exec(...)). Callers that
-// explicitly receive the QueryResult on an error path are responsible for
-// not calling Close() on it.
-func (c *Conn) Exec(cypher string, params ...map[string]any) (*lbug.QueryResult, error) {
-	var (
-		res *lbug.QueryResult
-		err error
-	)
-	if len(params) == 0 {
-		res, err = c.inner.Query(cypher)
-	} else {
-		prep, prepErr := c.inner.Prepare(cypher)
-		if prepErr != nil {
-			return nil, prepErr
-		}
-		defer func() { prep.Close() }()
-		res, err = c.inner.Execute(prep, params[0])
+// Exec always closes the underlying QueryResult before returning. This
+// prevents a GC finalizer race where lbug_query_result_destroy fires after
+// the database has already been explicitly closed, causing a SIGSEGV.
+func (c *Conn) Exec(cypher string, params ...map[string]any) error {
+	res, err := c.query(cypher, params...)
+	if res != nil {
+		res.Close()
 	}
-	if err != nil && res != nil {
-		// Suppress the GC finalizer on the error-state C result; calling
-		// lbug_query_result_destroy on an error QueryResult crashes on
-		// some platform/version combinations of LadybugDB.
-		runtime.SetFinalizer(res, nil)
-	}
-	return res, err
+	return err
 }
 
-// Query is an alias for Exec — both return a QueryResult.
+// Query executes a Cypher statement and returns the QueryResult for iteration.
+// The caller is responsible for calling Close() on the returned result.
 func (c *Conn) Query(cypher string, params ...map[string]any) (*lbug.QueryResult, error) {
-	return c.Exec(cypher, params...)
+	return c.query(cypher, params...)
+}
+
+// query is the shared implementation for Exec and Query.
+func (c *Conn) query(cypher string, params ...map[string]any) (*lbug.QueryResult, error) {
+	if len(params) == 0 {
+		return c.inner.Query(cypher)
+	}
+	prep, err := c.inner.Prepare(cypher)
+	if err != nil {
+		return nil, err
+	}
+	res, err := c.inner.Execute(prep, params[0])
+	prep.Close()
+	return res, err
 }
 
 // Begin starts an explicit transaction on this connection.
 // Begin panics if the BEGIN statement fails (programmer error: e.g. a
 // transaction is already open on this connection).
 func (c *Conn) Begin() *Tx {
-	if _, err := c.inner.Query("BEGIN TRANSACTION;"); err != nil {
+	if err := c.Exec("BEGIN TRANSACTION;"); err != nil {
 		panic(err)
 	}
 	return &Tx{conn: c}
@@ -137,19 +131,17 @@ func (c *Conn) Close() error {
 // Tx is an in-flight explicit transaction. Use Commit or Rollback to end it.
 type Tx struct{ conn *Conn }
 
-// Exec executes a Cypher statement within the transaction.
-func (t *Tx) Exec(cypher string, params ...map[string]any) (*lbug.QueryResult, error) {
+// Exec executes a Cypher statement within the transaction and discards the result.
+func (t *Tx) Exec(cypher string, params ...map[string]any) error {
 	return t.conn.Exec(cypher, params...)
 }
 
 // Commit commits the transaction.
 func (t *Tx) Commit() error {
-	_, err := t.conn.inner.Query("COMMIT;")
-	return err
+	return t.conn.Exec("COMMIT;")
 }
 
 // Rollback rolls back the transaction.
 func (t *Tx) Rollback() error {
-	_, err := t.conn.inner.Query("ROLLBACK;")
-	return err
+	return t.conn.Exec("ROLLBACK;")
 }
