@@ -17,10 +17,11 @@ import (
 // For Phase 1 sizes (a few million rows max) memory is fine; Phase 5 will
 // stream if needed.
 type Writers struct {
-	outDir   string
-	nodes    map[facts.NodeKind][]map[string]any
-	edges    map[facts.EdgeKind][]map[string]any
-	seenURNs map[facts.NodeKind]map[string]bool
+	outDir    string
+	nodes     map[facts.NodeKind][]map[string]any
+	edges     map[facts.EdgeKind][]map[string]any
+	seenURNs  map[facts.NodeKind]map[string]bool
+	seenEdges map[facts.EdgeKind]map[string]bool
 }
 
 // NewWriters constructs a Writers rooted at outDir. Call AddNode/AddEdge
@@ -28,10 +29,11 @@ type Writers struct {
 // table under outDir/nodes/ and outDir/rels/.
 func NewWriters(outDir string) *Writers {
 	return &Writers{
-		outDir:   outDir,
-		nodes:    map[facts.NodeKind][]map[string]any{},
-		edges:    map[facts.EdgeKind][]map[string]any{},
-		seenURNs: map[facts.NodeKind]map[string]bool{},
+		outDir:    outDir,
+		nodes:     map[facts.NodeKind][]map[string]any{},
+		edges:     map[facts.EdgeKind][]map[string]any{},
+		seenURNs:  map[facts.NodeKind]map[string]bool{},
+		seenEdges: map[facts.EdgeKind]map[string]bool{},
 	}
 }
 
@@ -53,10 +55,39 @@ func (w *Writers) AddNode(n facts.NodeFact) {
 	w.nodes[n.Kind] = append(w.nodes[n.Kind], n.Props)
 }
 
+// manyOneEdges lists rel tables with MANY_ONE cardinality. Each source node
+// may appear at most once as the FROM endpoint, so we dedup by SrcURN alone.
+var manyOneEdges = map[facts.EdgeKind]bool{
+	facts.EdgeDefinedIn: true,
+	facts.EdgeMethodOf:  true,
+	facts.EdgeHandles:   true,
+	facts.EdgeFK:        true,
+}
+
 // AddEdge buffers an EdgeFact for later flush. The src/dst URNs and kinds
 // are stored under reserved underscore-prefixed column names so the
 // loader can resolve endpoints at COPY time.
+//
+// Dedup strategy:
+//   - MANY_ONE rels: dedup by SrcURN — each source may appear only once.
+//   - All other rels: dedup by (SrcURN, DstURN) pair.
 func (w *Writers) AddEdge(e facts.EdgeFact) {
+	seen, ok := w.seenEdges[e.Kind]
+	if !ok {
+		seen = map[string]bool{}
+		w.seenEdges[e.Kind] = seen
+	}
+	var key string
+	if manyOneEdges[e.Kind] {
+		key = e.SrcURN
+	} else {
+		key = e.SrcURN + "\x00" + e.DstURN
+	}
+	if seen[key] {
+		return
+	}
+	seen[key] = true
+
 	row := map[string]any{}
 	for k, v := range e.Props {
 		row[k] = v

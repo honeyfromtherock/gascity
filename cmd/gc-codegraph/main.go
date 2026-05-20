@@ -114,17 +114,34 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			hcl := filepath.Join(*root, "atlas.hcl")
-			if _, err := os.Stat(hcl); err == nil {
-				nodes, edges, err := scrape.Atlas(hcl)
+			_ = filepath.WalkDir(*root, func(path string, d os.DirEntry, err error) error {
 				if err != nil {
-					log.Printf("[atlas] FAILED: %v", err)
-					return
+					return nil
+				}
+				rel, _ := filepath.Rel(*root, path)
+				if rig.IsExcluded(rel) {
+					if d.IsDir() {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+				if d.IsDir() {
+					return nil
+				}
+				base := filepath.Base(path)
+				if base != "atlas.hcl" && base != "schema.hcl" {
+					return nil
+				}
+				nodes, edges, err := scrape.Atlas(path)
+				if err != nil {
+					log.Printf("[atlas] %s: FAILED: %v", rel, err)
+					return nil
 				}
 				addNodes(nodes)
 				addEdges(edges)
-				log.Printf("[atlas] %d nodes %d edges", len(nodes), len(edges))
-			}
+				log.Printf("[atlas] %s: %d nodes %d edges", rel, len(nodes), len(edges))
+				return nil
+			})
 		}()
 
 		wg.Add(1)
