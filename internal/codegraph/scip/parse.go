@@ -62,6 +62,11 @@ func Parse(raw []byte, _ string, sha string) ([]facts.NodeFact, []facts.EdgeFact
 				}
 				kind := mapKind(info.Kind)
 				if kind == "" {
+					// scip-typescript does not populate SymbolInformation.Kind;
+					// fall back to inferring kind from the SCIP descriptor suffix.
+					kind = mapKindFromSymbol(occ.Symbol)
+				}
+				if kind == "" {
 					continue
 				}
 				name := info.DisplayName
@@ -97,6 +102,9 @@ func Parse(raw []byte, _ string, sha string) ([]facts.NodeFact, []facts.EdgeFact
 					continue
 				}
 				dstKind := mapKind(info.Kind)
+				if dstKind == "" {
+					dstKind = mapKindFromSymbol(occ.Symbol)
+				}
 				if dstKind == "" {
 					continue
 				}
@@ -212,6 +220,44 @@ func mapKind(k scippb.SymbolInformation_Kind) facts.NodeKind {
 	case scippb.SymbolInformation_Field, scippb.SymbolInformation_Property:
 		return facts.KindField
 	case scippb.SymbolInformation_Module, scippb.SymbolInformation_Namespace, scippb.SymbolInformation_Package:
+		return facts.KindModule
+	}
+	return ""
+}
+
+// mapKindFromSymbol infers a NodeKind from the SCIP descriptor suffix of a
+// symbol string. This is used as a fallback when SymbolInformation.Kind is
+// UnspecifiedKind, which scip-typescript does not populate.
+//
+// SCIP descriptor suffix conventions:
+//   - `name().` or `name()` — function / free-standing method
+//   - `TypeName#` — class / type alias / interface
+//   - `TypeName#field.` — field / property
+//   - `name/` — namespace / module
+//
+// Local symbols (e.g. "local 3") are skipped by returning "".
+func mapKindFromSymbol(sym string) facts.NodeKind {
+	if strings.HasPrefix(sym, "local ") {
+		return ""
+	}
+	// Strip trailing dot used on some descriptors to signal "term".
+	stripped := strings.TrimSuffix(sym, ".")
+	switch {
+	case strings.HasSuffix(stripped, ")"):
+		// Ends in "()" or "()." — function call descriptor.
+		// If it also contains "#" before the "()", it's a method.
+		// Split off the last descriptor segment to check.
+		if idx := strings.LastIndex(stripped, "#"); idx != -1 && idx > strings.LastIndex(stripped, "/") {
+			return facts.KindMethod
+		}
+		return facts.KindFunction
+	case strings.HasSuffix(stripped, "#"):
+		// Type descriptor — class / interface / type alias.
+		return facts.KindClass
+	case strings.Contains(stripped, "#"):
+		// Field/property inside a type: "Type#field".
+		return facts.KindField
+	case strings.HasSuffix(stripped, "/"):
 		return facts.KindModule
 	}
 	return ""

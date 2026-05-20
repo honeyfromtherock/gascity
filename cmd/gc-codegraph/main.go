@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -71,8 +72,12 @@ func main() {
 		}
 	}
 
-	// Run SCIP indexers in parallel per language
+	// Run SCIP indexers in parallel per language.
+	// TypeScript is handled separately below (multi-tsconfig walk).
 	for _, lang := range rig.Langs {
+		if lang == "typescript" {
+			continue // handled separately below
+		}
 		runner := pickRunner(lang)
 		if runner == nil {
 			continue
@@ -108,6 +113,54 @@ func main() {
 			mu.Unlock()
 			log.Printf("[scip:%s] %d nodes %d edges", l, len(nodes), len(edges))
 		}(lang, runner)
+	}
+
+	// TypeScript: discover all tsconfig.json files and run one indexer per
+	// directory in parallel, then merge results into the shared graph.
+	if hasLang(rig.Langs, "typescript") {
+		tsconfigDirs := findTSConfigs(*root, rig)
+		log.Printf("[scip:typescript] found %d tsconfig(s)", len(tsconfigDirs))
+		for i, dir := range tsconfigDirs {
+			i, dir := i, dir
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				indexFile := filepath.Join(*out, fmt.Sprintf("typescript-%d.scip", i))
+				if err := (scip.TypeScriptRunner{}).Run(dir, indexFile); err != nil {
+					log.Printf("[scip:typescript:%s] FAILED: %v", filepath.Base(dir), err)
+					return
+				}
+				raw, err := os.ReadFile(indexFile)
+				if err != nil {
+					log.Printf("[scip:typescript:%s] read: %v", filepath.Base(dir), err)
+					return
+				}
+				nodes, edges, err := scip.Parse(raw, *rigName, *sha)
+				if err != nil {
+					log.Printf("[scip:typescript:%s] parse: %v", filepath.Base(dir), err)
+					return
+				}
+				// scip-typescript emits paths relative to its --cwd (the
+				// tsconfig directory). Re-anchor them to the repo root so
+				// File.path values are consistent with Go/Python output.
+				relDir, _ := filepath.Rel(*root, dir)
+				if relDir != "" && relDir != "." {
+					rewritePaths(nodes, edges, relDir)
+				}
+				mu.Lock()
+				for _, n := range nodes {
+					w.AddNode(n)
+					if n.Kind == facts.KindFunction || n.Kind == facts.KindMethod {
+						allFuncs = append(allFuncs, n)
+					}
+				}
+				for _, e := range edges {
+					w.AddEdge(e)
+				}
+				mu.Unlock()
+				log.Printf("[scip:typescript:%s] %d nodes %d edges", filepath.Base(dir), len(nodes), len(edges))
+			}()
+		}
 	}
 
 	// Encore scraper (always tries — produces 0 facts if no annotations).
@@ -287,6 +340,80 @@ func hasLang(ls []string, want string) bool {
 // Encore-emitted placeholder (i.e., reconciliation did not match it).
 func isApproxEncoreURN(urn string) bool {
 	return strings.HasPrefix(urn, "scip-go . . ")
+}
+
+// rewritePaths prepends dirPrefix to all file-related paths in nodes and edges
+// so that paths produced by scip-typescript (relative to its --cwd tsconfig
+// directory) are re-anchored to the repo root, matching Go/Python output.
+func rewritePaths(nodes []facts.NodeFact, edges []facts.EdgeFact, dirPrefix string) {
+	prefix := dirPrefix + string(filepath.Separator)
+	prependPath := func(props map[string]any, key string) {
+		if v, ok := props[key]; ok {
+			if s, ok := v.(string); ok && s != "" {
+				props[key] = prefix + s
+			}
+		}
+	}
+	for i := range nodes {
+		prependPath(nodes[i].Props, "path") // File nodes
+		prependPath(nodes[i].Props, "file") // Function/Method/Class/etc nodes
+		// URN for File nodes is the RelativePath itself
+		if nodes[i].Kind == facts.KindFile {
+			nodes[i].URN = prefix + nodes[i].URN
+		}
+	}
+	for i := range edges {
+		// DEFINED_IN edges: DstURN is the file RelativePath
+		if edges[i].Kind == facts.EdgeDefinedIn && edges[i].DstKind == facts.KindFile {
+			edges[i].DstURN = prefix + edges[i].DstURN
+		}
+		// site_file prop on CALLS edges
+		if v, ok := edges[i].Props["site_file"]; ok {
+			if s, ok := v.(string); ok && s != "" {
+				edges[i].Props["site_file"] = prefix + s
+			}
+		}
+	}
+}
+
+// findTSConfigs returns directories under root containing a tsconfig.json,
+// respecting the rig's exclude list. Nested tsconfigs are NOT included if
+// a parent already has one (scip-typescript walks recursively via project
+// references).
+func findTSConfigs(root string, rig *discover.Rig) []string {
+	var dirs []string
+	known := map[string]bool{}
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		rel, _ := filepath.Rel(root, path)
+		if rig.IsExcluded(rel) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if filepath.Base(path) != "tsconfig.json" {
+			return nil
+		}
+		dir := filepath.Dir(path)
+		// Skip if a parent directory is already in the list — scip-typescript
+		// will handle nested projects via references.
+		for k := range known {
+			if strings.HasPrefix(dir, k+string(filepath.Separator)) {
+				return nil
+			}
+		}
+		known[dir] = true
+		dirs = append(dirs, dir)
+		return nil
+	})
+	sort.Strings(dirs)
+	return dirs
 }
 
 func must(err error) {
