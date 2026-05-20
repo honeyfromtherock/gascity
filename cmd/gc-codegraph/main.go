@@ -25,11 +25,12 @@ import (
 
 func main() {
 	var (
-		rigName = flag.String("rig", "", "rig name (for logging)")
-		root    = flag.String("root", "", "rig repo root")
-		out     = flag.String("out", "", "output dir for .codegraph (graph.kuzu + manifest.json)")
-		profile = flag.String("profile", "base", "schema profile: base | core")
-		sha     = flag.String("sha", "HEAD", "commit SHA stamp")
+		rigName   = flag.String("rig", "", "rig name (for logging)")
+		root      = flag.String("root", "", "rig repo root")
+		out       = flag.String("out", "", "output dir for .codegraph (graph.kuzu + manifest.json)")
+		profile   = flag.String("profile", "base", "schema profile: base | core")
+		sha       = flag.String("sha", "HEAD", "commit SHA stamp")
+		sqlSchema = flag.String("sql-schema", "public", "default SQL schema name for GoSQL/GORM scrapers")
 	)
 	flag.Parse()
 	if *root == "" || *out == "" || *rigName == "" {
@@ -228,7 +229,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, edges, err := scrape.GoSQL(filepath.Join(*root, "backend"), "public")
+			_, edges, err := scrape.GoSQL(*root, *sqlSchema)
 			if err != nil {
 				log.Printf("[gosql] FAILED: %v", err)
 				return
@@ -242,7 +243,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, edges, err := scrape.GORM(*root, "public")
+			_, edges, err := scrape.GORM(*root, *sqlSchema)
 			if err != nil {
 				log.Printf("[gorm] FAILED: %v", err)
 				return

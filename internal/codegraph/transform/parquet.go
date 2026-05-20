@@ -14,8 +14,12 @@ import (
 )
 
 // Writers buffer facts in memory, then flush one Parquet per table.
-// For Phase 1 sizes (a few million rows max) memory is fine; Phase 5 will
-// stream if needed.
+//
+// Memory budget: for Phase 1 sizes (a few million rows max) RAM is fine.
+// On gridbase-core the GORM scraper alone may emit ~24M edge facts before
+// reconciliation drops most of them — peak RSS during indexing has been
+// observed at ~3 GB. Machines with <8 GB free RAM should not index large
+// monorepos until streaming flush lands (deferred to Phase 5).
 type Writers struct {
 	outDir    string
 	nodes     map[facts.NodeKind][]map[string]any

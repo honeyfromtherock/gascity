@@ -71,7 +71,7 @@ func cmdGrep(args []string) int {
 		home, _ := os.UserHomeDir()
 		rigPath = fmt.Sprintf("%s/Source/grid-city/assets/%s", home, *rig)
 	}
-	cmd := exec.Command("rg", "-n", sym, strings.TrimSpace(rigPath))
+	cmd := exec.Command("rg", "-n", "--", sym, strings.TrimSpace(rigPath))
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	_ = cmd.Run()
 	return 0

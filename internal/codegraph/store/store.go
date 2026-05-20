@@ -1,6 +1,16 @@
 // Package store is a thin idiomatic-Go wrapper over the LadybugDB binding.
 // It enforces the single-writer/many-reader contract by exposing Open with
 // an explicit Mode.
+//
+// Rationale for a second persistence backend: per gas-city's AGENTS.md,
+// Beads is the universal persistence substrate for *domain state* (tasks,
+// sessions, molecules, etc.). The codegraph is a *derived, ephemeral index*
+// regenerated from source on every reindex — no task or session lifecycle
+// depends on graph.kuzu, and any rig can drop and rebuild its graph
+// without losing project state. LadybugDB is used because its columnar
+// graph storage and Cypher surface are well-suited to the structural-query
+// workload (callers, blast radius, cross-rig endpoint joins) that Beads's
+// task-store shape doesn't address.
 package store
 
 import (

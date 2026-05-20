@@ -3,6 +3,7 @@
 package scrape
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/gastownhall/gascity/internal/codegraph/facts"
 )
+
+const sqlMigrationSoftLimit = 10 * 1024 * 1024 // 10 MB
 
 // SQLMigrations walks a directory of timestamp-sorted .sql migration files
 // and extracts the cumulative schema (tables, columns, indexes, FKs) by
@@ -41,6 +44,9 @@ func SQLMigrations(dir string) ([]facts.NodeFact, []facts.EdgeFact, error) {
 
 	state := newSchemaState()
 	for _, f := range files {
+		if fi, err := os.Stat(f); err == nil && fi.Size() > sqlMigrationSoftLimit {
+			log.Printf("warn: sqlmigrations: %s is %d bytes (>%d soft limit); reading anyway", f, fi.Size(), sqlMigrationSoftLimit)
+		}
 		raw, err := os.ReadFile(f)
 		if err != nil {
 			continue // skip unreadable
