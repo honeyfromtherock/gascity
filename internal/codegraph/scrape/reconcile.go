@@ -6,25 +6,18 @@ import (
 	"github.com/gastownhall/gascity/internal/codegraph/facts"
 )
 
-// ReconcileEncoreHandles rewrites the SrcURN on each HANDLES edge to match
-// a real Function/Method URN from the SCIP parser output, by matching on
-// (package short name, function name).
+// ReconcileEdgeSrcURNs rewrites each edge's SrcURN by matching its approximate
+// "scip-go . . <pkg>/<func>()." URN against real SCIP Function/Method URNs
+// in funcs. Edges whose URN doesn't match the approximate format, or whose
+// (pkg, func) tuple isn't in funcs, are passed through unchanged.
 //
-// Encore scraper emits approximate SrcURNs like
+// This is the generic form used by Encore HANDLES, GoSQL READS_COL/WRITES_COL,
+// and GORM READS_COL/WRITES_COL edges — all emit the same approximate format.
 //
-//	"scip-go . . auth/Login()."
-//
-// SCIP emits URNs like
-//
-//	"scip-go gomod encore.app 14e56f3c72ef `encore.app/backend/auth`/Login()."
-//
-// where the pkg is the last backtick-quoted path segment and the function
-// name is the suffix after the final `/`.
-//
-// Returns the rewritten edges (same length and order as input). Edges whose
-// approximate URN cannot be matched are returned unchanged (and will be
-// dropped by the loader's IGNORE_ERRORS — better than a wrong rewrite).
-func ReconcileEncoreHandles(handles []facts.EdgeFact, funcs []facts.NodeFact) []facts.EdgeFact {
+// Returns the rewritten edges (same length and order as input). Unmatched
+// edges are returned unchanged and will be dropped by the loader's
+// IGNORE_ERRORS — better than a wrong rewrite.
+func ReconcileEdgeSrcURNs(edges []facts.EdgeFact, funcs []facts.NodeFact) []facts.EdgeFact {
 	// Build lookup: (pkgName, funcName) → realURN
 	realByKey := map[[2]string]string{}
 	for _, n := range funcs {
@@ -38,8 +31,8 @@ func ReconcileEncoreHandles(handles []facts.EdgeFact, funcs []facts.NodeFact) []
 		realByKey[[2]string{pkg, fn}] = n.URN
 	}
 
-	out := make([]facts.EdgeFact, len(handles))
-	for i, e := range handles {
+	out := make([]facts.EdgeFact, len(edges))
+	for i, e := range edges {
 		pkg, fn := splitApproxEncoreURN(e.SrcURN)
 		if pkg != "" && fn != "" {
 			if realURN, ok := realByKey[[2]string{pkg, fn}]; ok {
@@ -49,6 +42,13 @@ func ReconcileEncoreHandles(handles []facts.EdgeFact, funcs []facts.NodeFact) []
 		out[i] = e
 	}
 	return out
+}
+
+// ReconcileEncoreHandles is a backward-compatibility alias for ReconcileEdgeSrcURNs.
+//
+// Deprecated: call ReconcileEdgeSrcURNs directly.
+func ReconcileEncoreHandles(handles []facts.EdgeFact, funcs []facts.NodeFact) []facts.EdgeFact {
+	return ReconcileEdgeSrcURNs(handles, funcs)
 }
 
 // splitApproxEncoreURN parses an approximate Encore-emitted URN of the form

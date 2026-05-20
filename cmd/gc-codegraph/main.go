@@ -53,9 +53,11 @@ func main() {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
-	// Sidecars for HANDLES reconciliation: collected under mu.
+	// Sidecars for URN reconciliation: collected under mu, processed after wg.Wait().
 	var allFuncs []facts.NodeFact
 	var encoreHandles []facts.EdgeFact
+	var gosqlEdges []facts.EdgeFact
+	var gormEdges []facts.EdgeFact
 
 	addNodes := func(ns []facts.NodeFact) {
 		mu.Lock()
@@ -231,8 +233,10 @@ func main() {
 				log.Printf("[gosql] FAILED: %v", err)
 				return
 			}
-			addEdges(edges)
-			log.Printf("[gosql] %d edges", len(edges))
+			mu.Lock()
+			gosqlEdges = append(gosqlEdges, edges...)
+			mu.Unlock()
+			log.Printf("[gosql] %d edges (held for reconciliation)", len(edges))
 		}()
 
 		wg.Add(1)
@@ -243,8 +247,10 @@ func main() {
 				log.Printf("[gorm] FAILED: %v", err)
 				return
 			}
-			addEdges(edges)
-			log.Printf("[gorm] %d edges", len(edges))
+			mu.Lock()
+			gormEdges = append(gormEdges, edges...)
+			mu.Unlock()
+			log.Printf("[gorm] %d edges (held for reconciliation)", len(edges))
 		}()
 	}
 
@@ -290,18 +296,34 @@ func main() {
 
 	wg.Wait()
 
-	// Reconcile Encore HANDLES edges' approximate SrcURN against real SCIP
-	// function/method URNs. Must run after all goroutines complete so allFuncs
-	// is fully populated.
-	reconciled := scrape.ReconcileEncoreHandles(encoreHandles, allFuncs)
-	matched := 0
-	for _, e := range reconciled {
-		w.AddEdge(e)
-		if !isApproxEncoreURN(e.SrcURN) {
-			matched++
+	// Reconcile all approximate-URN edges against real SCIP function/method URNs.
+	// Must run after all goroutines complete so allFuncs is fully populated.
+	countMatched := func(edges []facts.EdgeFact) (matched int) {
+		for _, e := range edges {
+			if !isApproxEncoreURN(e.SrcURN) {
+				matched++
+			}
 		}
+		return matched
 	}
-	log.Printf("[reconcile] %d HANDLES reconciled (%d matched, %d unmatched)", len(reconciled), matched, len(reconciled)-matched)
+
+	reconHandles := scrape.ReconcileEdgeSrcURNs(encoreHandles, allFuncs)
+	reconGoSQL := scrape.ReconcileEdgeSrcURNs(gosqlEdges, allFuncs)
+	reconGORM := scrape.ReconcileEdgeSrcURNs(gormEdges, allFuncs)
+
+	for _, e := range reconHandles {
+		w.AddEdge(e)
+	}
+	for _, e := range reconGoSQL {
+		w.AddEdge(e)
+	}
+	for _, e := range reconGORM {
+		w.AddEdge(e)
+	}
+	log.Printf("[reconcile] handles=%d(%d matched) gosql=%d(%d matched) gorm=%d(%d matched)",
+		len(reconHandles), countMatched(reconHandles),
+		len(reconGoSQL), countMatched(reconGoSQL),
+		len(reconGORM), countMatched(reconGORM))
 
 	must(w.Flush())
 	log.Printf("[transform] parquet shards in %s", pqDir)
