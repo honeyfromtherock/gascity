@@ -157,6 +157,46 @@ func main() {
 		}()
 	}
 
+	// SQL migrations scraper: walks for Atlas migration directories and
+	// extracts cumulative schema (tables, columns, indexes, FKs).
+	// Handles repos whose Atlas HCL uses Pro features that scrape.Atlas can't parse.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_ = filepath.WalkDir(*root, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			rel, _ := filepath.Rel(*root, path)
+			if rig.IsExcluded(rel) {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if !d.IsDir() {
+				return nil
+			}
+			base := filepath.Base(path)
+			if base != "db_migrations" && base != "migrations" {
+				return nil
+			}
+			sqlFiles, _ := filepath.Glob(filepath.Join(path, "*.sql"))
+			if len(sqlFiles) == 0 {
+				return nil
+			}
+			nodes, edges, err := scrape.SQLMigrations(path)
+			if err != nil {
+				log.Printf("[sqlmigrations] %s: FAILED: %v", rel, err)
+				return nil
+			}
+			addNodes(nodes)
+			addEdges(edges)
+			log.Printf("[sqlmigrations] %s: %d files, %d nodes %d edges", rel, len(sqlFiles), len(nodes), len(edges))
+			return nil
+		})
+	}()
+
 	wg.Wait()
 	must(w.Flush())
 	log.Printf("[transform] parquet shards in %s", pqDir)
