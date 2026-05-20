@@ -234,6 +234,18 @@ func main() {
 			addEdges(edges)
 			log.Printf("[gosql] %d edges", len(edges))
 		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, edges, err := scrape.GORM(*root, "public")
+			if err != nil {
+				log.Printf("[gorm] FAILED: %v", err)
+				return
+			}
+			addEdges(edges)
+			log.Printf("[gorm] %d edges", len(edges))
+		}()
 	}
 
 	// SQL migrations scraper: walks for Atlas migration directories and
