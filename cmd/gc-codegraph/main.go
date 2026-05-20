@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/gastownhall/gascity/internal/codegraph/discover"
@@ -50,6 +51,11 @@ func main() {
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
+
+	// Sidecars for HANDLES reconciliation: collected under mu.
+	var allFuncs []facts.NodeFact
+	var encoreHandles []facts.EdgeFact
+
 	addNodes := func(ns []facts.NodeFact) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -89,13 +95,23 @@ func main() {
 				log.Printf("[scip:%s] parse: %v", l, err)
 				return
 			}
-			addNodes(nodes)
-			addEdges(edges)
+			mu.Lock()
+			for _, n := range nodes {
+				w.AddNode(n)
+				if n.Kind == facts.KindFunction || n.Kind == facts.KindMethod {
+					allFuncs = append(allFuncs, n)
+				}
+			}
+			for _, e := range edges {
+				w.AddEdge(e)
+			}
+			mu.Unlock()
 			log.Printf("[scip:%s] %d nodes %d edges", l, len(nodes), len(edges))
 		}(lang, runner)
 	}
 
-	// Encore scraper (always tries — produces 0 facts if no annotations)
+	// Encore scraper (always tries — produces 0 facts if no annotations).
+	// HANDLES edges are held back for reconciliation; all other edges go through.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -104,8 +120,18 @@ func main() {
 			log.Printf("[encore] FAILED: %v", err)
 			return
 		}
-		addNodes(nodes)
-		addEdges(edges)
+		mu.Lock()
+		for _, n := range nodes {
+			w.AddNode(n)
+		}
+		for _, e := range edges {
+			if e.Kind == facts.EdgeHandles {
+				encoreHandles = append(encoreHandles, e)
+			} else {
+				w.AddEdge(e)
+			}
+		}
+		mu.Unlock()
 		log.Printf("[encore] %d nodes %d edges", len(nodes), len(edges))
 	}()
 
@@ -198,6 +224,20 @@ func main() {
 	}()
 
 	wg.Wait()
+
+	// Reconcile Encore HANDLES edges' approximate SrcURN against real SCIP
+	// function/method URNs. Must run after all goroutines complete so allFuncs
+	// is fully populated.
+	reconciled := scrape.ReconcileEncoreHandles(encoreHandles, allFuncs)
+	matched := 0
+	for _, e := range reconciled {
+		w.AddEdge(e)
+		if !isApproxEncoreURN(e.SrcURN) {
+			matched++
+		}
+	}
+	log.Printf("[reconcile] %d HANDLES reconciled (%d matched, %d unmatched)", len(reconciled), matched, len(reconciled)-matched)
+
 	must(w.Flush())
 	log.Printf("[transform] parquet shards in %s", pqDir)
 
@@ -241,6 +281,12 @@ func hasLang(ls []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// isApproxEncoreURN reports whether a URN is still an approximate
+// Encore-emitted placeholder (i.e., reconciliation did not match it).
+func isApproxEncoreURN(urn string) bool {
+	return strings.HasPrefix(urn, "scip-go . . ")
 }
 
 func must(err error) {
