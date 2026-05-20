@@ -34,6 +34,100 @@ func Parse(raw []byte, _ string, sha string) ([]facts.NodeFact, []facts.EdgeFact
 		}
 	}
 
+	// Emit lightweight placeholder nodes for ExternalSymbols so that CALLS
+	// edges whose destination is a stdlib or third-party symbol have a valid
+	// FK target. We only emit kinds that can be the destination of an edge
+	// (Function, Method, Class, Interface, Field); Module placeholders are
+	// skipped because no CALLS/REFERENCES schema entry points at Module.
+	externalEmitted := map[string]bool{}
+	for _, ext := range idx.ExternalSymbols {
+		kind := mapKind(ext.Kind)
+		if kind == "" {
+			kind = mapKindFromSymbol(ext.Symbol)
+		}
+		switch kind {
+		case facts.KindFunction, facts.KindMethod, facts.KindClass, facts.KindInterface, facts.KindField:
+			// keep — these can be edge destinations
+		default:
+			continue
+		}
+		if externalEmitted[ext.Symbol] {
+			continue
+		}
+		externalEmitted[ext.Symbol] = true
+		name := ext.DisplayName
+		if name == "" {
+			name = lastSymbolPart(ext.Symbol)
+		}
+		var props map[string]any
+		switch kind {
+		case facts.KindFunction:
+			props = map[string]any{
+				"urn":        ext.Symbol,
+				"name":       name,
+				"qname":      ext.Symbol,
+				"file":       "",
+				"start_line": int32(0),
+				"start_col":  int32(0),
+				"end_line":   int32(0),
+				"end_col":    int32(0),
+				"signature":  "",
+				"doc":        joinDocs(ext.Documentation),
+				"visibility": "external",
+			}
+		case facts.KindMethod:
+			props = map[string]any{
+				"urn":        ext.Symbol,
+				"name":       name,
+				"qname":      ext.Symbol,
+				"file":       "",
+				"start_line": int32(0),
+				"start_col":  int32(0),
+				"end_line":   int32(0),
+				"end_col":    int32(0),
+				"signature":  "",
+				"doc":        joinDocs(ext.Documentation),
+				"receiver":   "",
+				"visibility": "external",
+			}
+		case facts.KindClass:
+			props = map[string]any{
+				"urn":          ext.Symbol,
+				"name":         name,
+				"qname":        ext.Symbol,
+				"file":         "",
+				"start_line":   int32(0),
+				"start_col":    int32(0),
+				"is_interface": false,
+				"doc":          joinDocs(ext.Documentation),
+			}
+		case facts.KindInterface:
+			props = map[string]any{
+				"urn":        ext.Symbol,
+				"name":       name,
+				"qname":      ext.Symbol,
+				"file":       "",
+				"start_line": int32(0),
+				"start_col":  int32(0),
+				"doc":        joinDocs(ext.Documentation),
+			}
+		case facts.KindField:
+			props = map[string]any{
+				"urn":       ext.Symbol,
+				"name":      name,
+				"type":      "",
+				"file":      "",
+				"line":      int32(0),
+				"owner_urn": "",
+			}
+		}
+		nodes = append(nodes, facts.NodeFact{
+			Kind:  kind,
+			URN:   ext.Symbol,
+			Props: props,
+		})
+	}
+
 	for _, doc := range idx.Documents {
 		// File node
 		nodes = append(nodes, facts.NodeFact{
@@ -98,10 +192,14 @@ func Parse(raw []byte, _ string, sha string) ([]facts.NodeFact, []facts.EdgeFact
 					DstURN:  doc.RelativePath,
 				})
 			} else {
-				if info == nil {
-					continue
+				// Determine destination kind. When info is nil the symbol was
+				// not listed in ExternalSymbols (scip-go omits them there but
+				// still emits reference occurrences), so fall back to inferring
+				// the kind from the SCIP descriptor suffix.
+				var dstKind facts.NodeKind
+				if info != nil {
+					dstKind = mapKind(info.Kind)
 				}
-				dstKind := mapKind(info.Kind)
 				if dstKind == "" {
 					dstKind = mapKindFromSymbol(occ.Symbol)
 				}
@@ -111,6 +209,83 @@ func Parse(raw []byte, _ string, sha string) ([]facts.NodeFact, []facts.EdgeFact
 				srcURN := findEnclosing(doc, occ)
 				if srcURN == "" {
 					continue
+				}
+				// Emit a placeholder node for the destination if it has no
+				// symInfo and hasn't been emitted yet. This covers stdlib and
+				// third-party symbols that scip-go references but does not
+				// include in ExternalSymbols.
+				if info == nil && !externalEmitted[occ.Symbol] {
+					externalEmitted[occ.Symbol] = true
+					name := lastSymbolPart(occ.Symbol)
+					var props map[string]any
+					switch dstKind {
+					case facts.KindFunction:
+						props = map[string]any{
+							"urn":        occ.Symbol,
+							"name":       name,
+							"qname":      occ.Symbol,
+							"file":       "",
+							"start_line": int32(0),
+							"start_col":  int32(0),
+							"end_line":   int32(0),
+							"end_col":    int32(0),
+							"signature":  "",
+							"doc":        "",
+							"visibility": "external",
+						}
+					case facts.KindMethod:
+						props = map[string]any{
+							"urn":        occ.Symbol,
+							"name":       name,
+							"qname":      occ.Symbol,
+							"file":       "",
+							"start_line": int32(0),
+							"start_col":  int32(0),
+							"end_line":   int32(0),
+							"end_col":    int32(0),
+							"signature":  "",
+							"doc":        "",
+							"receiver":   "",
+							"visibility": "external",
+						}
+					case facts.KindClass:
+						props = map[string]any{
+							"urn":          occ.Symbol,
+							"name":         name,
+							"qname":        occ.Symbol,
+							"file":         "",
+							"start_line":   int32(0),
+							"start_col":    int32(0),
+							"is_interface": false,
+							"doc":          "",
+						}
+					case facts.KindInterface:
+						props = map[string]any{
+							"urn":        occ.Symbol,
+							"name":       name,
+							"qname":      occ.Symbol,
+							"file":       "",
+							"start_line": int32(0),
+							"start_col":  int32(0),
+							"doc":        "",
+						}
+					case facts.KindField:
+						props = map[string]any{
+							"urn":       occ.Symbol,
+							"name":      name,
+							"type":      "",
+							"file":      "",
+							"line":      int32(0),
+							"owner_urn": "",
+						}
+					}
+					if props != nil {
+						nodes = append(nodes, facts.NodeFact{
+							Kind:  dstKind,
+							URN:   occ.Symbol,
+							Props: props,
+						})
+					}
 				}
 				switch dstKind {
 				case facts.KindFunction, facts.KindMethod:

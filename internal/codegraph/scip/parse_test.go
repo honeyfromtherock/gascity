@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/codegraph/scip"
@@ -57,5 +58,21 @@ func TestParseSCIP_TinyGo_NodesAndEdges(t *testing.T) {
 	}
 	if !callFound {
 		t.Errorf("no CALLS edge in %d edges", len(edges))
+	}
+
+	// External symbol placeholder: fmt.Println should appear as a Function node
+	// even though it's defined in the stdlib (not indexed here).
+	externalFound := false
+	for _, n := range nodes {
+		if n.Kind == "Function" && strings.Contains(n.Props["name"].(string), "Println") {
+			externalFound = true
+			if v := n.Props["visibility"]; v != "external" {
+				t.Errorf("Println visibility = %v, want external", v)
+			}
+			break
+		}
+	}
+	if !externalFound {
+		t.Error("fmt.Println placeholder node missing")
 	}
 }
