@@ -15,11 +15,12 @@ import (
 func cmdCypher(args []string) int {
 	fs := flag.NewFlagSet("cypher", flag.ExitOnError)
 	rig := fs.String("rig", "", "")
+	root := fs.String("root", "", "override rig root path (skips rig resolution)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if *rig == "" || fs.NArg() < 1 {
-		fmt.Fprintln(os.Stderr, `usage: gc graph cypher --rig <name> "<read-only cypher>"`)
+	if (*rig == "" && *root == "") || fs.NArg() < 1 {
+		fmt.Fprintln(os.Stderr, `usage: gc graph cypher --rig <name> [--root <path>] "<read-only cypher>"`)
 		return 2
 	}
 	q := fs.Arg(0)
@@ -27,7 +28,7 @@ func cmdCypher(args []string) int {
 		fmt.Fprintln(os.Stderr, "refusing write-shaped Cypher; gc graph cypher is read-only")
 		return 1
 	}
-	db, err := internal.OpenRig(*rig)
+	db, err := internal.OpenRig(*rig, *root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

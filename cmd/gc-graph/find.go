@@ -17,20 +17,21 @@ import (
 // without changing the CLI surface.
 func cmdFind(args []string) int {
 	fs := flag.NewFlagSet("find", flag.ExitOnError)
-	rig := fs.String("rig", "", "rig name (required)")
+	rig := fs.String("rig", "", "rig name (required unless --root is set)")
+	root := fs.String("root", "", "override rig root path (skips rig resolution)")
 	kind := fs.String("kind", "Function", "Function|Method|Class|Interface|File")
 	limit := fs.Int("limit", 20, "")
 	jsonOut := fs.Bool("json", false, "")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if *rig == "" || fs.NArg() < 1 {
-		fmt.Fprintln(os.Stderr, "usage: gc graph find <query> --rig <name> [--kind Function]")
+	if (*rig == "" && *root == "") || fs.NArg() < 1 {
+		fmt.Fprintln(os.Stderr, "usage: gc graph find <query> --rig <name> [--root <path>] [--kind Function]")
 		return 2
 	}
 	q := fs.Arg(0)
 
-	db, err := internal.OpenRig(*rig)
+	db, err := internal.OpenRig(*rig, *root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

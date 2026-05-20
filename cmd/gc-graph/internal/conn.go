@@ -11,17 +11,28 @@ import (
 	"github.com/gastownhall/gascity/internal/codegraph/store"
 )
 
-// OpenRig opens the rig's graph.kuzu READ_ONLY. Resolves rig path via
-// `gc rig path <rig>` if that subcommand exists, falling back to the
-// grid-city assets convention.
-func OpenRig(rig string) (*store.DB, error) {
-	root, err := resolveRig(rig)
-	if err != nil {
-		return nil, err
+// OpenRig opens the rig's graph.kuzu READ_ONLY. If rootOverride is non-empty,
+// it is used directly as the rig root (skips rig resolution entirely). Otherwise
+// resolves via `gc rig path <rig>` then falls back to the grid-city assets
+// convention (~/.../grid-city/assets/<rig> or a symlink there).
+func OpenRig(rig, rootOverride string) (*store.DB, error) {
+	var root string
+	if rootOverride != "" {
+		abs, err := filepath.Abs(rootOverride)
+		if err != nil {
+			return nil, fmt.Errorf("resolve --root: %w", err)
+		}
+		root = abs
+	} else {
+		r, err := resolveRig(rig)
+		if err != nil {
+			return nil, err
+		}
+		root = r
 	}
 	p := filepath.Join(root, ".codegraph", "graph.kuzu")
 	if _, err := os.Stat(p); err != nil {
-		return nil, fmt.Errorf("no graph at %s (run scripts/codegraph-index.sh first?)", p)
+		return nil, fmt.Errorf("no graph at %s (run gc-codegraph first?)", p)
 	}
 	return store.Open(p, store.ModeReadOnly)
 }

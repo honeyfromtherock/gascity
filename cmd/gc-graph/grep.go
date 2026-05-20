@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/gastownhall/gascity/cmd/gc-graph/internal"
@@ -16,17 +17,18 @@ import (
 func cmdGrep(args []string) int {
 	fs := flag.NewFlagSet("grep", flag.ExitOnError)
 	rig := fs.String("rig", "", "")
+	root := fs.String("root", "", "override rig root path (skips rig resolution)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if *rig == "" || fs.NArg() < 1 {
-		fmt.Fprintln(os.Stderr, "usage: gc graph grep <symbol> --rig <name>")
+	if (*rig == "" && *root == "") || fs.NArg() < 1 {
+		fmt.Fprintln(os.Stderr, "usage: gc graph grep <symbol> --rig <name> [--root <path>]")
 		return 2
 	}
 	sym := fs.Arg(0)
 
 	// Graph-first: Cypher CONTAINS scan (FTS unavailable on Ladybug v0.12.2)
-	db, err := internal.OpenRig(*rig)
+	db, err := internal.OpenRig(*rig, *root)
 	if err == nil {
 		defer func() { _ = db.Close() }()
 		c := db.Connect()
@@ -59,9 +61,16 @@ func cmdGrep(args []string) int {
 		}
 	}
 
-	// Fallback: ripgrep on the rig root (assets convention)
-	home, _ := os.UserHomeDir()
-	rigPath := fmt.Sprintf("%s/Source/grid-city/assets/%s", home, *rig)
+	// Fallback: ripgrep on the rig root. When --root is set, search that
+	// directly; otherwise use the assets convention.
+	var rigPath string
+	if *root != "" {
+		abs, _ := filepath.Abs(*root)
+		rigPath = abs
+	} else {
+		home, _ := os.UserHomeDir()
+		rigPath = fmt.Sprintf("%s/Source/grid-city/assets/%s", home, *rig)
+	}
 	cmd := exec.Command("rg", "-n", sym, strings.TrimSpace(rigPath))
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	_ = cmd.Run()

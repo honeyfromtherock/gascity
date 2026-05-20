@@ -14,17 +14,18 @@ import (
 func cmdCallers(args []string) int {
 	fs := flag.NewFlagSet("callers", flag.ExitOnError)
 	rig := fs.String("rig", "", "")
+	root := fs.String("root", "", "override rig root path (skips rig resolution)")
 	depth := fs.Int("depth", 1, "")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if *rig == "" || fs.NArg() < 1 {
-		fmt.Fprintln(os.Stderr, "usage: gc graph callers <urn> --rig <name> [--depth N]")
+	if (*rig == "" && *root == "") || fs.NArg() < 1 {
+		fmt.Fprintln(os.Stderr, "usage: gc graph callers <urn> --rig <name> [--root <path>] [--depth N]")
 		return 2
 	}
 	urn := fs.Arg(0)
 
-	db, err := internal.OpenRig(*rig)
+	db, err := internal.OpenRig(*rig, *root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

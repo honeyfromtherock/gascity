@@ -335,17 +335,23 @@ func main() {
 		prof = schema.ProfileCore
 	}
 	must(load.Full(db, pqDir, prof))
-	if err := db.Close(); err != nil {
-		log.Fatalf("close db: %v", err)
-	}
-	log.Printf("[load] done")
 
+	// Write manifest BEFORE closing db. The lbug finalizer for any
+	// un-GC'd QueryResult fires during or after db.Close(), which can
+	// SIGSEGV (lbug_connection_destroy called after the database handle
+	// is freed). Writing the manifest first guarantees it lands even if
+	// the close path crashes. Phase 1 workaround — root fix tracked in
+	// the phase-1-results doc (followup FU6).
 	manifest := filepath.Join(*out, "manifest.json")
 	if err := os.WriteFile(manifest, []byte(fmt.Sprintf(`{"rig":%q,"sha":%q,"profile":%q}`+"\n",
 		*rigName, *sha, *profile)), 0o644); err != nil {
 		log.Fatalf("write manifest: %v", err)
 	}
 
+	if err := db.Close(); err != nil {
+		log.Printf("warn: close db: %v", err)
+	}
+	log.Printf("[load] done")
 	fmt.Println("✓ ready")
 }
 
