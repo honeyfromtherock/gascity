@@ -6,7 +6,6 @@ package tier2
 import (
 	"fmt"
 	"path/filepath"
-	"time"
 
 	"github.com/gastownhall/gascity/internal/codegraph/facts"
 )
@@ -51,10 +50,8 @@ func Run(rig, root string, indexers []Tier2Indexer) ([]facts.NodeFact, []facts.E
 					Kind: facts.KindFile,
 					URN:  urn,
 					Props: map[string]any{
-						"path":     rel,
-						"rig":      rig,
-						"language": idx.Language(),
-						"added_at": time.Now().UTC(),
+						"path": rel,
+						"lang": idx.Language(),
 					},
 				})
 				seenFiles[urn] = true

@@ -185,6 +185,42 @@ func nodeForValue(v any) parquetgo.Node {
 	}
 }
 
+// normalizeRow coerces Go values to the concrete types parquet-go expects
+// for the leaf types chosen by nodeForValue. In particular, Go `int` /
+// `uint` (machine word) must be narrowed to int32/int64 because parquet-go's
+// makeValue rejects mismatched kinds (e.g. INT32 from `int`).
+func normalizeRow(row map[string]any) map[string]any {
+	out := make(map[string]any, len(row))
+	for k, v := range row {
+		out[k] = normalizeValue(v)
+	}
+	return out
+}
+
+func normalizeValue(v any) any {
+	if v == nil {
+		return v
+	}
+	switch x := v.(type) {
+	case int:
+		return int32(x)
+	case int8:
+		return int32(x)
+	case int16:
+		return int32(x)
+	case uint:
+		return int32(x)
+	case uint8:
+		return int32(x)
+	case uint16:
+		return int32(x)
+	case uint32:
+		return int32(x)
+	default:
+		return v
+	}
+}
+
 // writeParquet writes rows to a Parquet file at path, building the schema
 // from the first row's keys and value types (Option A: explicit schema).
 func writeParquet(path string, rows []map[string]any) error {
@@ -192,7 +228,7 @@ func writeParquet(path string, rows []map[string]any) error {
 		return nil
 	}
 
-	schema := schemaFromRow(rows[0])
+	schema := schemaFromRow(normalizeRow(rows[0]))
 
 	f, err := os.Create(path)
 	if err != nil {
@@ -206,7 +242,7 @@ func writeParquet(path string, rows []map[string]any) error {
 
 	parquetRows := make([]parquetgo.Row, len(rows))
 	for i, row := range rows {
-		parquetRows[i] = schema.Deconstruct(nil, row)
+		parquetRows[i] = schema.Deconstruct(nil, normalizeRow(row))
 	}
 
 	if _, err := pw.WriteRows(parquetRows); err != nil {

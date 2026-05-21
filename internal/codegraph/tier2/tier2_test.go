@@ -47,6 +47,19 @@ func TestRunEmitsFileAndCallsEPFacts(t *testing.T) {
 	if fileCount != 1 {
 		t.Errorf("got %d File nodes, want 1", fileCount)
 	}
+	for _, n := range nodes {
+		if n.Kind == facts.KindFile {
+			if _, ok := n.Props["rig"]; ok {
+				t.Errorf("File node should not have 'rig' prop")
+			}
+			if _, ok := n.Props["added_at"]; ok {
+				t.Errorf("File node should not have 'added_at' prop")
+			}
+			if n.Props["lang"] == nil {
+				t.Errorf("File node missing 'lang' prop")
+			}
+		}
+	}
 	if len(edges) != 2 {
 		t.Errorf("got %d edges, want 2", len(edges))
 	}

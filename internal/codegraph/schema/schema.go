@@ -70,7 +70,7 @@ var baseDDL = []string{
 	// `profile` is quoted because Ladybug treats PROFILE as a reserved keyword.
 	"CREATE NODE TABLE IF NOT EXISTS Manifest (" +
 		"rig STRING, sha STRING, `profile` STRING, " +
-		"indexed_at TIMESTAMP, indexer_version STRING, tier STRING, " +
+		"indexed_at STRING, indexer_version STRING, tier STRING, " +
 		"PRIMARY KEY (rig));",
 	`CREATE REL TABLE IF NOT EXISTS CALLS(
 		FROM Function TO Function, FROM Function TO Method,

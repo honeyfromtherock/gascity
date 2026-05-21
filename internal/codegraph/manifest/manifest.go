@@ -26,7 +26,7 @@ func (m Manifest) Emit() facts.NodeFact {
 			"rig":             m.Rig,
 			"sha":             m.SHA,
 			"profile":         m.Profile,
-			"indexed_at":      m.IndexedAt,
+			"indexed_at":      m.IndexedAt.UTC().Format(time.RFC3339),
 			"indexer_version": m.IndexerVersion,
 			"tier":            m.Tier,
 		},
