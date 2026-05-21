@@ -37,6 +37,7 @@ func Load(path string) ([]Rig, error) {
 	if _, err := toml.DecodeFile(path, &doc); err != nil {
 		return nil, fmt.Errorf("rigdir: parse %s: %w", path, err)
 	}
+	home, homeErr := os.UserHomeDir()
 	seen := map[string]bool{}
 	for i := range doc.Rig {
 		r := &doc.Rig[i]
@@ -53,7 +54,12 @@ func Load(path string) ([]Rig, error) {
 			return nil, fmt.Errorf("rigdir: duplicate rig name %q", r.Name)
 		}
 		seen[r.Name] = true
-		r.Root = expandTilde(r.Root)
+		if strings.HasPrefix(r.Root, "~") {
+			if homeErr != nil {
+				return nil, fmt.Errorf("rigdir: rig %q has tilde root but home dir lookup failed: %w", r.Name, homeErr)
+			}
+			r.Root = filepath.Join(home, strings.TrimPrefix(r.Root, "~"))
+		}
 	}
 	return doc.Rig, nil
 }
@@ -66,15 +72,4 @@ func Lookup(rigs []Rig, name string) (Rig, error) {
 		}
 	}
 	return Rig{}, fmt.Errorf("rigdir: no rig named %q", name)
-}
-
-func expandTilde(p string) string {
-	if !strings.HasPrefix(p, "~") {
-		return p
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return p
-	}
-	return filepath.Join(home, strings.TrimPrefix(p, "~"))
 }
