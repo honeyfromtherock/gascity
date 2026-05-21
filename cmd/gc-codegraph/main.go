@@ -90,9 +90,9 @@ func main() {
 	} else if rigEntry.Tier == "endpoint" {
 		log.Printf("[tier2] rig=%s root=%s", rigEntry.Name, rigEntry.Root)
 		indexers := []tier2.Tier2Indexer{
-			// CSharpIndexer wired in Task 9
-			// SwiftIndexer wired in Task 17
-			// KotlinIndexer wired in Task 19
+			tier2.CSharpIndexer{},
+			// tier2.SwiftIndexer{}, // Task 17
+			// tier2.KotlinIndexer{}, // Task 19
 		}
 		nodes, edges, err := tier2.Run(rigEntry.Name, rigEntry.Root, indexers)
 		if err != nil {
