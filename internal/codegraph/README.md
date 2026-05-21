@@ -123,14 +123,17 @@ for full context and priority ordering.
 - **Parquet BYTE_ARRAY BLOB bug (FU8)** — Ladybug's Parquet reader misreads
   STRING columns as BLOB. The loader materializes CSV intermediates to work
   around this; switch back to direct `COPY FROM Parquet` when fixed.
-- **CALLS edge loss (FU4)** — only ~299 of 51k CALLS edges land because their
-  destination URN is an un-indexed external-package symbol. Fix: emit
-  placeholder nodes for SCIP ExternalSymbols so FK lookups resolve.
-- **HANDLES edges = 0 (FU2)** — Encore scraper emits approximate URNs;
-  reconciliation pass needed to match against real SCIP URNs.
-- **GoSQL/GORM patterns (FU10)** — GoSQL analyzer matches only
-  `encore.dev/storage/sqldb` literal-string queries; GORM `Where`/`Order`
-  patterns tracked separately.
+- **CALLS edge resolution (FU4, fixed in `41f283c2`)** — placeholder nodes
+  for SCIP ExternalSymbols now resolve cross-package call sites; CALLS
+  edge count on gridbase-core: 1,208 (from 299 baseline).
+- **Encore HANDLES reconciliation (FU2, fixed in `1b133227`)** — approximate
+  Encore URNs are now matched against real SCIP URNs after both producers
+  finish; HANDLES count on gridbase-core: 851 (from 0 baseline).
+- **GoSQL/GORM analyzers (FU10, fixed in `c1ab4c07`+`998ed6c4`)** — GORM
+  `Where`/`Order`/`Group`/`Joins` patterns produce READS_COL edges; same
+  URN reconciliation applied. READS_COL count on gridbase-core: 12,144
+  (from 0 baseline). GORM `Create`/`Save`/`Update` → WRITES_COL still
+  deferred to Phase 2.
 - **Atlas HCL path detection (FU1)** — pipeline globs `**/atlas.hcl`
   recursively (fixed in `740066ea`); DbTable/DbColumn nodes should now land
   for repos with nested HCL files.
