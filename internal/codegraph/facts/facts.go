@@ -22,6 +22,7 @@ const (
 	KindDbTable   NodeKind = "DbTable"   // DbTable node kind.
 	KindDbColumn  NodeKind = "DbColumn"  // DbColumn node kind.
 	KindDbIndex   NodeKind = "DbIndex"   // DbIndex node kind.
+	KindManifest  NodeKind = "Manifest"  // Manifest node kind (rig index metadata).
 )
 
 // EdgeKind is the LadybugDB rel table name an EdgeFact targets.

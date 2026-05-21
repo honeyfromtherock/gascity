@@ -8,6 +8,7 @@ func TestNodeKindsUnique(t *testing.T) {
 		KindFunction, KindMethod, KindClass, KindInterface,
 		KindField, KindTest, KindEndpoint,
 		KindDbTable, KindDbColumn, KindDbIndex,
+		KindManifest,
 	}
 	seen := map[NodeKind]bool{}
 	for _, k := range kinds {
@@ -19,7 +20,7 @@ func TestNodeKindsUnique(t *testing.T) {
 		}
 		seen[k] = true
 	}
-	if got, want := len(kinds), 13; got != want {
+	if got, want := len(kinds), 14; got != want {
 		t.Errorf("kinds list has %d entries; expected %d (update test if you added a new kind)", got, want)
 	}
 }

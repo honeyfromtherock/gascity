@@ -67,6 +67,11 @@ var baseDDL = []string{
 		file STRING, start_line INT32, framework STRING);`,
 	`CREATE NODE TABLE IF NOT EXISTS Endpoint(urn STRING PRIMARY KEY,
 		transport STRING, route STRING, verb STRING);`,
+	// `profile` is quoted because Ladybug treats PROFILE as a reserved keyword.
+	"CREATE NODE TABLE IF NOT EXISTS Manifest (" +
+		"rig STRING, sha STRING, `profile` STRING, " +
+		"indexed_at TIMESTAMP, indexer_version STRING, tier STRING, " +
+		"PRIMARY KEY (rig));",
 	`CREATE REL TABLE IF NOT EXISTS CALLS(
 		FROM Function TO Function, FROM Function TO Method,
 		FROM Method TO Function,   FROM Method TO Method,
