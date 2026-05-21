@@ -110,3 +110,69 @@ func splitSCIPGoURN(urn string) (pkg, fn string) {
 	fn = after
 	return pkg, fn
 }
+
+// ReconcileEndpointDstURNs rewrites approximate "endpoint:path:METHOD /path"
+// URNs to canonical "endpoint:<service>.<method>" URNs by matching the
+// approximate URN's (method, path) against emitted Endpoint nodes.
+//
+// Templated segments ({id}) are normalized to "*" on both sides so a call to
+// "/work-orders/{id}" matches a canonical endpoint declared with the same
+// template. Edges whose URN does not match any canonical endpoint are left
+// unchanged.
+//
+// Returns the (mutated) edge slice and the count of edges that were rewritten.
+func ReconcileEndpointDstURNs(edges []facts.EdgeFact, endpoints []facts.NodeFact) ([]facts.EdgeFact, int) {
+	type key struct{ method, path string }
+	canon := map[key]string{}
+	for _, e := range endpoints {
+		if e.Kind != facts.KindEndpoint {
+			continue
+		}
+		m, _ := e.Props["method"].(string)
+		p, _ := e.Props["path"].(string)
+		if m == "" || p == "" {
+			continue
+		}
+		canon[key{strings.ToUpper(m), normalizeEndpointPath(p)}] = e.URN
+	}
+	matched := 0
+	for i, ed := range edges {
+		if ed.Kind != facts.EdgeCallsEP {
+			continue
+		}
+		method, path, ok := parseApproxEndpointURN(ed.DstURN)
+		if !ok {
+			continue
+		}
+		if urn, found := canon[key{method, normalizeEndpointPath(path)}]; found {
+			edges[i].DstURN = urn
+			matched++
+		}
+	}
+	return edges, matched
+}
+
+// parseApproxEndpointURN parses "endpoint:path:METHOD /path/{id}" → (METHOD, "/path/{id}", true).
+func parseApproxEndpointURN(urn string) (method, path string, ok bool) {
+	const prefix = "endpoint:path:"
+	if !strings.HasPrefix(urn, prefix) {
+		return "", "", false
+	}
+	rest := urn[len(prefix):]
+	sp := strings.IndexByte(rest, ' ')
+	if sp < 0 {
+		return "", "", false
+	}
+	return rest[:sp], rest[sp+1:], true
+}
+
+// normalizeEndpointPath replaces /{param}/ segments with /*/ for matching.
+func normalizeEndpointPath(p string) string {
+	parts := strings.Split(p, "/")
+	for i, s := range parts {
+		if len(s) >= 2 && s[0] == '{' && s[len(s)-1] == '}' {
+			parts[i] = "*"
+		}
+	}
+	return strings.Join(parts, "/")
+}
