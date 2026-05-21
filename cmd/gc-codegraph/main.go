@@ -12,16 +12,47 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gastownhall/gascity/internal/codegraph/discover"
 	"github.com/gastownhall/gascity/internal/codegraph/facts"
 	"github.com/gastownhall/gascity/internal/codegraph/load"
+	"github.com/gastownhall/gascity/internal/codegraph/manifest"
+	"github.com/gastownhall/gascity/internal/codegraph/rigdir"
 	"github.com/gastownhall/gascity/internal/codegraph/schema"
 	"github.com/gastownhall/gascity/internal/codegraph/scip"
 	"github.com/gastownhall/gascity/internal/codegraph/scrape"
 	"github.com/gastownhall/gascity/internal/codegraph/store"
+	"github.com/gastownhall/gascity/internal/codegraph/tier2"
 	"github.com/gastownhall/gascity/internal/codegraph/transform"
 )
+
+const indexerVersion = "0.2.0"
+
+// resolveRig consults ~/.codegraph/rigs.toml. If found, it overrides --root
+// and --profile from the rig entry. If not, it synthesizes a Rig from the
+// flags with tier=scip (legacy behavior).
+func resolveRig(name, root, profile string) rigdir.Rig {
+	path, err := rigdir.DefaultPath()
+	if err == nil {
+		if _, statErr := os.Stat(path); statErr == nil {
+			rigs, loadErr := rigdir.Load(path)
+			if loadErr == nil {
+				if r, lookupErr := rigdir.Lookup(rigs, name); lookupErr == nil {
+					if root == "" {
+						root = r.Root
+					}
+					if profile == "" {
+						profile = r.Profile
+					}
+					return rigdir.Rig{Name: name, Root: root, Tier: r.Tier, Profile: profile}
+				}
+			}
+		}
+	}
+	// Default: legacy SCIP path
+	return rigdir.Rig{Name: name, Root: root, Tier: "scip", Profile: profile}
+}
 
 func main() {
 	var (
@@ -33,13 +64,16 @@ func main() {
 		sqlSchema = flag.String("sql-schema", "public", "default SQL schema name for GoSQL/GORM scrapers")
 	)
 	flag.Parse()
-	if *root == "" || *out == "" || *rigName == "" {
-		log.Fatal("--rig, --root, --out required")
+	if *rigName == "" || *out == "" {
+		log.Fatal("--rig and --out required")
 	}
 
-	rig, err := discover.Discover(*root)
-	must(err)
-	log.Printf("[discover] langs=%v root=%s", rig.Langs, rig.Root)
+	rigEntry := resolveRig(*rigName, *root, *profile)
+	*root = rigEntry.Root
+	*profile = rigEntry.Profile
+	if *root == "" {
+		log.Fatal("--root required (no rigs.toml entry found)")
+	}
 
 	if err := os.MkdirAll(*out, 0o755); err != nil {
 		log.Fatalf("create out dir: %v", err)
@@ -50,6 +84,76 @@ func main() {
 		log.Fatalf("clean shards: %v", err)
 	}
 	w := transform.NewWriters(pqDir)
+
+	if rigEntry.Tier == "scip" {
+		runSCIP(*rigName, *root, *sha, *sqlSchema, *out, w)
+	} else if rigEntry.Tier == "endpoint" {
+		log.Printf("[tier2] rig=%s root=%s", rigEntry.Name, rigEntry.Root)
+		indexers := []tier2.Tier2Indexer{
+			// CSharpIndexer wired in Task 9
+			// SwiftIndexer wired in Task 17
+			// KotlinIndexer wired in Task 19
+		}
+		nodes, edges, err := tier2.Run(rigEntry.Name, rigEntry.Root, indexers)
+		if err != nil {
+			log.Fatalf("tier2: %v", err)
+		}
+		for _, n := range nodes {
+			w.AddNode(n)
+		}
+		for _, e := range edges {
+			w.AddEdge(e)
+		}
+		log.Printf("[tier2] %d File nodes, %d CALLS_EP edges", len(nodes), len(edges))
+	} else {
+		log.Fatalf("unknown tier: %q", rigEntry.Tier)
+	}
+
+	// Emit uniform Manifest node before flush.
+	m := manifest.Manifest{
+		Rig:            rigEntry.Name,
+		SHA:            *sha,
+		Profile:        rigEntry.Profile,
+		IndexedAt:      time.Now().UTC(),
+		IndexerVersion: indexerVersion,
+		Tier:           rigEntry.Tier,
+	}
+	w.AddNode(m.Emit())
+
+	must(w.Flush())
+	log.Printf("[transform] parquet shards in %s", pqDir)
+
+	db, err := store.Open(filepath.Join(*out, "graph.kuzu"), store.ModeReadWrite)
+	must(err)
+	prof := schema.ProfileBase
+	if *profile == "core" {
+		prof = schema.ProfileCore
+	}
+	must(load.Full(db, pqDir, prof))
+
+	// Write manifest BEFORE closing db. The lbug finalizer for any
+	// un-GC'd QueryResult fires during or after db.Close(), which can
+	// SIGSEGV (lbug_connection_destroy called after the database handle
+	// is freed). Writing the manifest first guarantees it lands even if
+	// the close path crashes. Phase 1 workaround — root fix tracked in
+	// the phase-1-results doc (followup FU6).
+	manifestPath := filepath.Join(*out, "manifest.json")
+	if err := os.WriteFile(manifestPath, []byte(fmt.Sprintf(`{"rig":%q,"sha":%q,"profile":%q}`+"\n",
+		*rigName, *sha, *profile)), 0o644); err != nil {
+		log.Fatalf("write manifest: %v", err)
+	}
+
+	if err := db.Close(); err != nil {
+		log.Printf("warn: close db: %v", err)
+	}
+	log.Printf("[load] done")
+	fmt.Println("✓ ready")
+}
+
+func runSCIP(rigName, root, sha, sqlSchema, out string, w *transform.Writers) {
+	rig, err := discover.Discover(root)
+	must(err)
+	log.Printf("[discover] langs=%v root=%s", rig.Langs, rig.Root)
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -88,8 +192,8 @@ func main() {
 		wg.Add(1)
 		go func(l string, r scip.Runner) {
 			defer wg.Done()
-			indexFile := filepath.Join(*out, l+".scip")
-			if err := r.Run(*root, indexFile); err != nil {
+			indexFile := filepath.Join(out, l+".scip")
+			if err := r.Run(root, indexFile); err != nil {
 				log.Printf("[scip:%s] FAILED: %v", l, err)
 				return
 			}
@@ -98,7 +202,7 @@ func main() {
 				log.Printf("[scip:%s] read index: %v", l, err)
 				return
 			}
-			nodes, edges, err := scip.Parse(raw, *rigName, *sha)
+			nodes, edges, err := scip.Parse(raw, rigName, sha)
 			if err != nil {
 				log.Printf("[scip:%s] parse: %v", l, err)
 				return
@@ -121,14 +225,14 @@ func main() {
 	// TypeScript: discover all tsconfig.json files and run one indexer per
 	// directory in parallel, then merge results into the shared graph.
 	if hasLang(rig.Langs, "typescript") {
-		tsconfigDirs := findTSConfigs(*root, rig)
+		tsconfigDirs := findTSConfigs(root, rig)
 		log.Printf("[scip:typescript] found %d tsconfig(s)", len(tsconfigDirs))
 		for i, dir := range tsconfigDirs {
 			i, dir := i, dir
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				indexFile := filepath.Join(*out, fmt.Sprintf("typescript-%d.scip", i))
+				indexFile := filepath.Join(out, fmt.Sprintf("typescript-%d.scip", i))
 				if err := (scip.TypeScriptRunner{}).Run(dir, indexFile); err != nil {
 					log.Printf("[scip:typescript:%s] FAILED: %v", filepath.Base(dir), err)
 					return
@@ -138,7 +242,7 @@ func main() {
 					log.Printf("[scip:typescript:%s] read: %v", filepath.Base(dir), err)
 					return
 				}
-				nodes, edges, err := scip.Parse(raw, *rigName, *sha)
+				nodes, edges, err := scip.Parse(raw, rigName, sha)
 				if err != nil {
 					log.Printf("[scip:typescript:%s] parse: %v", filepath.Base(dir), err)
 					return
@@ -146,7 +250,7 @@ func main() {
 				// scip-typescript emits paths relative to its --cwd (the
 				// tsconfig directory). Re-anchor them to the repo root so
 				// File.path values are consistent with Go/Python output.
-				relDir, _ := filepath.Rel(*root, dir)
+				relDir, _ := filepath.Rel(root, dir)
 				if relDir != "" && relDir != "." {
 					rewritePaths(nodes, edges, relDir)
 				}
@@ -171,7 +275,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		nodes, edges, err := scrape.Encore(*root)
+		nodes, edges, err := scrape.Encore(root)
 		if err != nil {
 			log.Printf("[encore] FAILED: %v", err)
 			return
@@ -196,11 +300,11 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_ = filepath.WalkDir(*root, func(path string, d os.DirEntry, err error) error {
+			_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 				if err != nil {
 					return nil
 				}
-				rel, _ := filepath.Rel(*root, path)
+				rel, _ := filepath.Rel(root, path)
 				if rig.IsExcluded(rel) {
 					if d.IsDir() {
 						return filepath.SkipDir
@@ -229,7 +333,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, edges, err := scrape.GoSQL(*root, *sqlSchema)
+			_, edges, err := scrape.GoSQL(root, sqlSchema)
 			if err != nil {
 				log.Printf("[gosql] FAILED: %v", err)
 				return
@@ -243,7 +347,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, edges, err := scrape.GORM(*root, *sqlSchema)
+			_, edges, err := scrape.GORM(root, sqlSchema)
 			if err != nil {
 				log.Printf("[gorm] FAILED: %v", err)
 				return
@@ -261,11 +365,11 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_ = filepath.WalkDir(*root, func(path string, d os.DirEntry, err error) error {
+		_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				return nil
 			}
-			rel, _ := filepath.Rel(*root, path)
+			rel, _ := filepath.Rel(root, path)
 			if rig.IsExcluded(rel) {
 				if d.IsDir() {
 					return filepath.SkipDir
@@ -325,35 +429,6 @@ func main() {
 		len(reconHandles), countMatched(reconHandles),
 		len(reconGoSQL), countMatched(reconGoSQL),
 		len(reconGORM), countMatched(reconGORM))
-
-	must(w.Flush())
-	log.Printf("[transform] parquet shards in %s", pqDir)
-
-	db, err := store.Open(filepath.Join(*out, "graph.kuzu"), store.ModeReadWrite)
-	must(err)
-	prof := schema.ProfileBase
-	if *profile == "core" {
-		prof = schema.ProfileCore
-	}
-	must(load.Full(db, pqDir, prof))
-
-	// Write manifest BEFORE closing db. The lbug finalizer for any
-	// un-GC'd QueryResult fires during or after db.Close(), which can
-	// SIGSEGV (lbug_connection_destroy called after the database handle
-	// is freed). Writing the manifest first guarantees it lands even if
-	// the close path crashes. Phase 1 workaround — root fix tracked in
-	// the phase-1-results doc (followup FU6).
-	manifest := filepath.Join(*out, "manifest.json")
-	if err := os.WriteFile(manifest, []byte(fmt.Sprintf(`{"rig":%q,"sha":%q,"profile":%q}`+"\n",
-		*rigName, *sha, *profile)), 0o644); err != nil {
-		log.Fatalf("write manifest: %v", err)
-	}
-
-	if err := db.Close(); err != nil {
-		log.Printf("warn: close db: %v", err)
-	}
-	log.Printf("[load] done")
-	fmt.Println("✓ ready")
 }
 
 func pickRunner(lang string) scip.Runner {
