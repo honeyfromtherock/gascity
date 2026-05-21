@@ -55,77 +55,7 @@ func Parse(raw []byte, _ string, sha string) ([]facts.NodeFact, []facts.EdgeFact
 			continue
 		}
 		externalEmitted[ext.Symbol] = true
-		name := ext.DisplayName
-		if name == "" {
-			name = lastSymbolPart(ext.Symbol)
-		}
-		var props map[string]any
-		switch kind {
-		case facts.KindFunction:
-			props = map[string]any{
-				"urn":        ext.Symbol,
-				"name":       name,
-				"qname":      ext.Symbol,
-				"file":       "",
-				"start_line": int32(0),
-				"start_col":  int32(0),
-				"end_line":   int32(0),
-				"end_col":    int32(0),
-				"signature":  "",
-				"doc":        joinDocs(ext.Documentation),
-				"visibility": "external",
-			}
-		case facts.KindMethod:
-			props = map[string]any{
-				"urn":        ext.Symbol,
-				"name":       name,
-				"qname":      ext.Symbol,
-				"file":       "",
-				"start_line": int32(0),
-				"start_col":  int32(0),
-				"end_line":   int32(0),
-				"end_col":    int32(0),
-				"signature":  "",
-				"doc":        joinDocs(ext.Documentation),
-				"receiver":   "",
-				"visibility": "external",
-			}
-		case facts.KindClass:
-			props = map[string]any{
-				"urn":          ext.Symbol,
-				"name":         name,
-				"qname":        ext.Symbol,
-				"file":         "",
-				"start_line":   int32(0),
-				"start_col":    int32(0),
-				"is_interface": false,
-				"doc":          joinDocs(ext.Documentation),
-			}
-		case facts.KindInterface:
-			props = map[string]any{
-				"urn":        ext.Symbol,
-				"name":       name,
-				"qname":      ext.Symbol,
-				"file":       "",
-				"start_line": int32(0),
-				"start_col":  int32(0),
-				"doc":        joinDocs(ext.Documentation),
-			}
-		case facts.KindField:
-			props = map[string]any{
-				"urn":       ext.Symbol,
-				"name":      name,
-				"type":      "",
-				"file":      "",
-				"line":      int32(0),
-				"owner_urn": "",
-			}
-		}
-		nodes = append(nodes, facts.NodeFact{
-			Kind:  kind,
-			URN:   ext.Symbol,
-			Props: props,
-		})
+		nodes = append(nodes, makePlaceholderNode(ext.Symbol, kind, joinDocs(ext.Documentation)))
 	}
 
 	for _, doc := range idx.Documents {
@@ -216,76 +146,7 @@ func Parse(raw []byte, _ string, sha string) ([]facts.NodeFact, []facts.EdgeFact
 				// include in ExternalSymbols.
 				if info == nil && !externalEmitted[occ.Symbol] {
 					externalEmitted[occ.Symbol] = true
-					name := lastSymbolPart(occ.Symbol)
-					var props map[string]any
-					switch dstKind {
-					case facts.KindFunction:
-						props = map[string]any{
-							"urn":        occ.Symbol,
-							"name":       name,
-							"qname":      occ.Symbol,
-							"file":       "",
-							"start_line": int32(0),
-							"start_col":  int32(0),
-							"end_line":   int32(0),
-							"end_col":    int32(0),
-							"signature":  "",
-							"doc":        "",
-							"visibility": "external",
-						}
-					case facts.KindMethod:
-						props = map[string]any{
-							"urn":        occ.Symbol,
-							"name":       name,
-							"qname":      occ.Symbol,
-							"file":       "",
-							"start_line": int32(0),
-							"start_col":  int32(0),
-							"end_line":   int32(0),
-							"end_col":    int32(0),
-							"signature":  "",
-							"doc":        "",
-							"receiver":   "",
-							"visibility": "external",
-						}
-					case facts.KindClass:
-						props = map[string]any{
-							"urn":          occ.Symbol,
-							"name":         name,
-							"qname":        occ.Symbol,
-							"file":         "",
-							"start_line":   int32(0),
-							"start_col":    int32(0),
-							"is_interface": false,
-							"doc":          "",
-						}
-					case facts.KindInterface:
-						props = map[string]any{
-							"urn":        occ.Symbol,
-							"name":       name,
-							"qname":      occ.Symbol,
-							"file":       "",
-							"start_line": int32(0),
-							"start_col":  int32(0),
-							"doc":        "",
-						}
-					case facts.KindField:
-						props = map[string]any{
-							"urn":       occ.Symbol,
-							"name":      name,
-							"type":      "",
-							"file":      "",
-							"line":      int32(0),
-							"owner_urn": "",
-						}
-					}
-					if props != nil {
-						nodes = append(nodes, facts.NodeFact{
-							Kind:  dstKind,
-							URN:   occ.Symbol,
-							Props: props,
-						})
-					}
+					nodes = append(nodes, makePlaceholderNode(occ.Symbol, dstKind, ""))
 				}
 				switch dstKind {
 				case facts.KindFunction, facts.KindMethod:
@@ -476,4 +337,54 @@ func lastSymbolPart(sym string) string {
 // joinDocs concatenates documentation strings with newlines.
 func joinDocs(docs []string) string {
 	return strings.Join(docs, "\n")
+}
+
+// makePlaceholderNode constructs a NodeFact for a symbol whose definition
+// isn't in this SCIP index (typically an ExternalSymbol or a cross-package
+// reference). doc may be empty.
+func makePlaceholderNode(symbol string, kind facts.NodeKind, doc string) facts.NodeFact {
+	props := map[string]any{
+		"urn":        symbol,
+		"name":       lastSymbolPart(symbol),
+		"qname":      symbol,
+		"file":       "",
+		"visibility": "external",
+	}
+	// Source-location columns differ per node kind. Function/Method/Class/
+	// Interface have full position columns; Field has only `line`.
+	switch kind {
+	case facts.KindFunction:
+		props["start_line"] = int32(0)
+		props["start_col"] = int32(0)
+		props["end_line"] = int32(0)
+		props["end_col"] = int32(0)
+		props["signature"] = ""
+		props["doc"] = doc
+	case facts.KindMethod:
+		props["start_line"] = int32(0)
+		props["start_col"] = int32(0)
+		props["end_line"] = int32(0)
+		props["end_col"] = int32(0)
+		props["signature"] = ""
+		props["doc"] = doc
+		props["receiver"] = ""
+	case facts.KindClass:
+		props["start_line"] = int32(0)
+		props["start_col"] = int32(0)
+		props["is_interface"] = false
+		props["doc"] = doc
+	case facts.KindInterface:
+		props["start_line"] = int32(0)
+		props["start_col"] = int32(0)
+		props["doc"] = doc
+	case facts.KindField:
+		props["line"] = int32(0)
+		props["type"] = ""
+		props["owner_urn"] = ""
+		// Field nodes don't use visibility or qname in the same way —
+		// remove the defaults that don't match the Field schema.
+		delete(props, "visibility")
+		delete(props, "qname")
+	}
+	return facts.NodeFact{Kind: kind, URN: symbol, Props: props}
 }
