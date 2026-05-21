@@ -79,7 +79,7 @@ func cmdEndpointConsumers(args []string) int {
 		// attached, the host rig is already the default — skipping USE
 		// also avoids LadybugDB's hyphenated-identifier parser quirk.
 		if anyAttached || i > 0 {
-			if err := conn.Exec("USE " + r.Name + ";"); err != nil {
+			if err := conn.Exec("USE " + Alias(r.Name) + ";"); err != nil {
 				fmt.Fprintf(os.Stderr, "[%s] USE failed: %v\n", r.Name, err)
 				continue
 			}
