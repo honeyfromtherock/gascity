@@ -58,7 +58,7 @@ func main() {
 	var (
 		rigName   = flag.String("rig", "", "rig name (for logging)")
 		root      = flag.String("root", "", "rig repo root")
-		out       = flag.String("out", "", "output dir for .codegraph (graph.kuzu + manifest.json)")
+		out       = flag.String("out", "", "output dir for .codegraph (graph.kuzu)")
 		profile   = flag.String("profile", "base", "schema profile: base | core")
 		sha       = flag.String("sha", "HEAD", "commit SHA stamp")
 		sqlSchema = flag.String("sql-schema", "public", "default SQL schema name for GoSQL/GORM scrapers")
@@ -130,18 +130,6 @@ func main() {
 		prof = schema.ProfileCore
 	}
 	must(load.Full(db, pqDir, prof))
-
-	// Write manifest BEFORE closing db. The lbug finalizer for any
-	// un-GC'd QueryResult fires during or after db.Close(), which can
-	// SIGSEGV (lbug_connection_destroy called after the database handle
-	// is freed). Writing the manifest first guarantees it lands even if
-	// the close path crashes. Phase 1 workaround — root fix tracked in
-	// the phase-1-results doc (followup FU6).
-	manifestPath := filepath.Join(*out, "manifest.json")
-	if err := os.WriteFile(manifestPath, []byte(fmt.Sprintf(`{"rig":%q,"sha":%q,"profile":%q}`+"\n",
-		*rigName, *sha, *profile)), 0o644); err != nil {
-		log.Fatalf("write manifest: %v", err)
-	}
 
 	if err := db.Close(); err != nil {
 		log.Printf("warn: close db: %v", err)
