@@ -65,7 +65,6 @@ func main() {
 		canonicalFrom = flag.String("canonical-from", "", "rig name whose :Endpoint nodes are the canonical catalog for URN reconciliation (endpoint-tier only)")
 	)
 	flag.Parse()
-	_ = canonicalFrom
 	if *rigName == "" || *out == "" {
 		log.Fatal("--rig and --out required")
 	}
@@ -101,13 +100,44 @@ func main() {
 		if err != nil {
 			log.Fatalf("tier2: %v", err)
 		}
+		log.Printf("[tier2] %d File nodes, %d CALLS_EP edges (pre-reconcile)", len(nodes), len(edges))
+
+		// Reconcile approximate Endpoint URNs against canonical catalog if available.
+		if *canonicalFrom != "" {
+			canonicalEPs, err := loadCanonicalEndpoints(*canonicalFrom)
+			if err != nil {
+				log.Printf("[canonical-from] %v; continuing without reconciliation", err)
+			} else if canonicalEPs != nil {
+				var matched int
+				edges, matched = scrape.ReconcileEndpointDstURNs(edges, canonicalEPs)
+				log.Printf("[canonical-from] reconciled %d/%d CALLS_EP edges", matched, len(edges))
+
+				// Remove placeholder :Endpoint nodes whose URN is now superseded
+				// by a canonical match. An endpoint is "superseded" if at least
+				// one edge that originally targeted it now targets a canonical URN.
+				supersededURNs := map[string]bool{}
+				for _, e := range edges {
+					if orig, ok := e.Props["original_urn"].(string); ok {
+						supersededURNs[orig] = true
+					}
+				}
+				filtered := nodes[:0]
+				for _, n := range nodes {
+					if n.Kind == facts.KindEndpoint && supersededURNs[n.URN] {
+						continue
+					}
+					filtered = append(filtered, n)
+				}
+				nodes = filtered
+			}
+		}
+
 		for _, n := range nodes {
 			w.AddNode(n)
 		}
 		for _, e := range edges {
 			w.AddEdge(e)
 		}
-		log.Printf("[tier2] %d File nodes, %d CALLS_EP edges", len(nodes), len(edges))
 	} else {
 		log.Fatalf("unknown tier: %q", rigEntry.Tier)
 	}
