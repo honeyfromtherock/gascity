@@ -57,7 +57,7 @@ func scanFile(path, root string, nodes *[]facts.NodeFact, edges *[]facts.EdgeFac
 				verb = "POST"
 			}
 			service := pkgName
-			urn := service + ":" + fn.Name.Name
+			urn := "endpoint:" + service + "." + fn.Name.Name
 			funcURN := "scip-go . . " + service + "/" + fn.Name.Name + "()."
 
 			*nodes = append(*nodes, facts.NodeFact{
