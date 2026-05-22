@@ -12,10 +12,11 @@ import (
 
 // Rig is a single registered rig.
 type Rig struct {
-	Name    string `toml:"name"`
-	Root    string `toml:"root"`
-	Tier    string `toml:"tier"`              // "scip" or "endpoint"
-	Profile string `toml:"profile,omitempty"` // optional profile name (e.g. "core")
+	Name          string `toml:"name"`
+	Root          string `toml:"root"`
+	Tier          string `toml:"tier"`                     // "scip" or "endpoint"
+	Profile       string `toml:"profile,omitempty"`        // optional profile name (e.g. "core")
+	CanonicalFrom string `toml:"canonical_from,omitempty"` // optional: rig to reference for canonical Endpoint URNs (endpoint-tier only)
 }
 
 type fileShape struct {
