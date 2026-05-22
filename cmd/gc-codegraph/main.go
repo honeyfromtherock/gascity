@@ -389,6 +389,68 @@ func runSCIP(rigName, root, sha, sqlSchema, out string, w *transform.Writers) {
 
 	wg.Wait()
 
+	// Encore generated client + frontend call sites. The Encore client (TypeScript)
+	// declares the canonical service.method endpoint surface; the frontend invokes
+	// it via a `client` binding. Emit :Endpoint nodes from the client and :CALLS_EP
+	// edges from any .ts/.tsx file that imports/uses the client.
+	clientPaths := []string{
+		"frontend/src/services/client.ts",
+		"src/lib/client.ts",
+		"src/generated/encore.gen.ts",
+		"src/generated/client.ts",
+	}
+	var encoreClientPath string
+	for _, rel := range clientPaths {
+		p := filepath.Join(root, rel)
+		if _, err := os.Stat(p); err == nil {
+			encoreClientPath = p
+			break
+		}
+	}
+	if encoreClientPath != "" {
+		eps, err := scrape.ScanEncoreClient(encoreClientPath)
+		if err != nil {
+			log.Printf("[encore-client] scan %s: %v", encoreClientPath, err)
+		} else {
+			for _, n := range eps {
+				w.AddNode(n)
+			}
+			log.Printf("[encore-client] %d endpoints from %s", len(eps), encoreClientPath)
+		}
+		frontendDir := filepath.Join(root, "frontend", "src")
+		if _, err := os.Stat(frontendDir); err == nil {
+			var callSiteCount int
+			_ = filepath.Walk(frontendDir, func(p string, info os.FileInfo, err error) error {
+				if err != nil || info.IsDir() {
+					return nil
+				}
+				if !(strings.HasSuffix(p, ".ts") || strings.HasSuffix(p, ".tsx")) {
+					return nil
+				}
+				if strings.HasSuffix(p, ".d.ts") {
+					return nil
+				}
+				edges, err := scrape.ScanCallSites(p, rigName, []string{"client"})
+				if err != nil {
+					return nil
+				}
+				// Rewrite SrcURN from "<rig>:file:<abs>" to the File node's
+				// primary key (path relative to rig root).
+				rel, relErr := filepath.Rel(root, p)
+				if relErr != nil {
+					return nil
+				}
+				for _, e := range edges {
+					e.SrcURN = rel
+					w.AddEdge(e)
+					callSiteCount++
+				}
+				return nil
+			})
+			log.Printf("[encore-client] %d call-site edges", callSiteCount)
+		}
+	}
+
 	// Reconcile all approximate-URN edges against real SCIP function/method URNs.
 	// Must run after all goroutines complete so allFuncs is fully populated.
 	countMatched := func(edges []facts.EdgeFact) (matched int) {

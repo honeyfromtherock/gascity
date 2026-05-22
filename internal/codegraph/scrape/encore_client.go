@@ -85,9 +85,13 @@ func ScanEncoreClient(path string) ([]facts.NodeFact, error) {
 					Kind: facts.KindEndpoint,
 					URN:  urn,
 					Props: map[string]any{
-						"service": ns,
-						"method":  method,
-						"source":  "encore-client",
+						"urn":       urn,
+						"transport": "encore",
+						"route":     "",
+						"verb":      "",
+						"service":   ns,
+						"method":    method,
+						"source":    "encore-client",
 					},
 				})
 			}
