@@ -33,6 +33,7 @@ func Run(rig, root string, indexers []Tier2Indexer) ([]facts.NodeFact, []facts.E
 	var nodes []facts.NodeFact
 	var edges []facts.EdgeFact
 	seenFiles := map[string]bool{}
+	seenEndpoints := map[string]bool{}
 
 	for _, idx := range indexers {
 		paths, err := idx.DetectFiles(root)
@@ -44,7 +45,9 @@ func Run(rig, root string, indexers []Tier2Indexer) ([]facts.NodeFact, []facts.E
 			if err != nil {
 				rel = p
 			}
-			urn := rig + ":file:" + rel
+			// URN must match the File table's PK column (path). The loader
+			// resolves edge endpoints via the URN string against the PK value.
+			urn := rel
 			if !seenFiles[urn] {
 				nodes = append(nodes, facts.NodeFact{
 					Kind: facts.KindFile,
@@ -61,12 +64,29 @@ func Run(rig, root string, indexers []Tier2Indexer) ([]facts.NodeFact, []facts.E
 				return nil, nil, fmt.Errorf("tier2 %s extract %s: %w", idx.Language(), p, err)
 			}
 			for _, c := range calls {
+				epURN := fmt.Sprintf("endpoint:path:%s %s", c.Method, c.URL)
+				// Emit a placeholder :Endpoint node so the CALLS_EP edge has
+				// a valid DST in this rig's local graph. Cross-rig queries
+				// can reconcile to canonical URNs at query time.
+				if !seenEndpoints[epURN] {
+					nodes = append(nodes, facts.NodeFact{
+						Kind: facts.KindEndpoint,
+						URN:  epURN,
+						Props: map[string]any{
+							"urn":       epURN,
+							"transport": "http",
+							"route":     c.URL,
+							"verb":      c.Method,
+						},
+					})
+					seenEndpoints[epURN] = true
+				}
 				edges = append(edges, facts.EdgeFact{
 					Kind:    facts.EdgeCallsEP,
 					SrcKind: facts.KindFile,
 					SrcURN:  urn,
 					DstKind: facts.KindEndpoint,
-					DstURN:  fmt.Sprintf("endpoint:path:%s %s", c.Method, c.URL),
+					DstURN:  epURN,
 					Props: map[string]any{
 						"line":    c.Line,
 						"dynamic": c.Dynamic,
