@@ -92,6 +92,7 @@ func main() {
 		indexers := []tier2.Tier2Indexer{
 			tier2.CSharpIndexer{},
 			tier2.SwiftIndexer{},
+			tier2.KotlinIndexer{},
 			// tier2.KotlinIndexer{}, // Task 19
 		}
 		nodes, edges, err := tier2.Run(rigEntry.Name, rigEntry.Root, indexers)
