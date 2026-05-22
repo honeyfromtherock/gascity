@@ -62,8 +62,10 @@ func main() {
 		profile   = flag.String("profile", "base", "schema profile: base | core")
 		sha       = flag.String("sha", "HEAD", "commit SHA stamp")
 		sqlSchema = flag.String("sql-schema", "public", "default SQL schema name for GoSQL/GORM scrapers")
+		canonicalFrom = flag.String("canonical-from", "", "rig name whose :Endpoint nodes are the canonical catalog for URN reconciliation (endpoint-tier only)")
 	)
 	flag.Parse()
+	_ = canonicalFrom
 	if *rigName == "" || *out == "" {
 		log.Fatal("--rig and --out required")
 	}
@@ -587,4 +589,60 @@ func must(err error) {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+// loadCanonicalEndpoints opens the named rig's graph.kuzu read-only and pulls
+// all :Endpoint nodes as NodeFacts suitable for ReconcileEndpointDstURNs.
+// Returns nil if the canonical rig has no graph yet (warn, don't fail).
+func loadCanonicalEndpoints(refRig string) ([]facts.NodeFact, error) {
+	rigsPath, err := rigdir.DefaultPath()
+	if err != nil {
+		return nil, fmt.Errorf("rigdir default path: %w", err)
+	}
+	rigs, err := rigdir.Load(rigsPath)
+	if err != nil {
+		return nil, fmt.Errorf("rigdir load: %w", err)
+	}
+	ref, err := rigdir.Lookup(rigs, refRig)
+	if err != nil {
+		return nil, fmt.Errorf("canonical-from %q: %w", refRig, err)
+	}
+	graphPath := filepath.Join(ref.Root, ".codegraph", "graph.kuzu")
+	if _, err := os.Stat(graphPath); err != nil {
+		log.Printf("[canonical-from] reference rig %q has no graph yet; skipping reconciliation", refRig)
+		return nil, nil
+	}
+	db, err := store.Open(graphPath, store.ModeReadOnly)
+	if err != nil {
+		return nil, fmt.Errorf("open canonical rig %q (%s): %w", refRig, graphPath, err)
+	}
+	defer func() { _ = db.Close() }()
+	conn := db.Connect()
+	defer func() { _ = conn.Close() }()
+	result, err := conn.Query("MATCH (e:Endpoint) WHERE e.urn STARTS WITH 'endpoint:' RETURN e.urn, e.route, e.verb;")
+	if err != nil {
+		return nil, fmt.Errorf("query canonical endpoints: %w", err)
+	}
+	defer result.Close()
+	var out []facts.NodeFact
+	for result.HasNext() {
+		row, err := result.Next()
+		if err != nil {
+			break
+		}
+		urn, _ := row.GetValue(0)
+		route, _ := row.GetValue(1)
+		verb, _ := row.GetValue(2)
+		row.Close()
+		out = append(out, facts.NodeFact{
+			Kind: facts.KindEndpoint,
+			URN:  fmt.Sprint(urn),
+			Props: map[string]any{
+				"path":   fmt.Sprint(route),
+				"method": fmt.Sprint(verb),
+			},
+		})
+	}
+	log.Printf("[canonical-from] loaded %d endpoints from %s", len(out), refRig)
+	return out, nil
 }
