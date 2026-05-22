@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -135,9 +136,12 @@ func loadNodeIfExists(conn *store.Conn, table, path, tmpDir string) error {
 		return fmt.Errorf("csv %s: %w", table, err)
 	}
 	q := fmt.Sprintf("COPY %s FROM '%s' (HEADER=false, PARALLEL=FALSE);", table, csvPath)
+	pre := countRows(conn, table)
 	if err := conn.Exec(q); err != nil {
 		return fmt.Errorf("copy node %s: %w", table, err)
 	}
+	post := countRows(conn, table)
+	logCopyResult(table, pre, post, len(rows))
 	return nil
 }
 
@@ -205,13 +209,18 @@ func loadRelIfExists(conn *store.Conn, table, path, tmpDir string) error {
 		}
 		q := fmt.Sprintf("COPY %s FROM '%s' (FROM='%s', TO='%s', HEADER=false, PARALLEL=FALSE, IGNORE_ERRORS=true);",
 			table, csvPath, pair.src, pair.dst)
+		pairLabel := fmt.Sprintf("%s (%s→%s)", table, pair.src, pair.dst)
+		pre := countRows(conn, table)
 		if err := conn.Exec(q); err != nil {
 			// IGNORE_ERRORS handles missing-FK rows; if we still error, log
 			// and continue rather than failing the entire load. Cross-package
 			// references to unresolved Method/Function URNs are expected when
 			// the SCIP index doesn't include the definition's document.
 			fmt.Printf("warn: copy rel %s (%s→%s): %v\n", table, pair.src, pair.dst, err)
+			continue
 		}
+		post := countRows(conn, table)
+		logCopyResult(pairLabel, pre, post, len(pairRows))
 	}
 	return nil
 }
@@ -305,5 +314,63 @@ func valueToCSV(v any) string {
 		return "false"
 	default:
 		return fmt.Sprintf("%v", v)
+	}
+}
+
+// countRows returns the row count of a node or rel table. Returns 0 on error
+// (silent fallback; the loader log will surface real issues).
+func countRows(conn *store.Conn, table string) int {
+	// Try rel-table form first.
+	q := fmt.Sprintf("MATCH ()-[r:%s]->() RETURN count(r);", table)
+	result, err := conn.Query(q)
+	if err != nil {
+		// Try node-table form.
+		q = fmt.Sprintf("MATCH (n:%s) RETURN count(n);", table)
+		result, err = conn.Query(q)
+		if err != nil {
+			return 0
+		}
+	}
+	defer result.Close()
+	if !result.HasNext() {
+		return 0
+	}
+	row, err := result.Next()
+	if err != nil {
+		return 0
+	}
+	defer row.Close()
+	v, err := row.GetValue(0)
+	if err != nil {
+		return 0
+	}
+	switch n := v.(type) {
+	case int64:
+		return int(n)
+	case int:
+		return n
+	default:
+		return 0
+	}
+}
+
+// logCopyResult emits [load] N: copied X, skipped Y per COPY, with WARNING
+// thresholds. If expectedRows is unknown (pass -1), only logs copied count.
+func logCopyResult(table string, pre, post, expectedRows int) {
+	copied := post - pre
+	if expectedRows < 0 {
+		log.Printf("[load] %s: copied %d", table, copied)
+		return
+	}
+	skipped := expectedRows - copied
+	if skipped < 0 {
+		skipped = 0
+	}
+	log.Printf("[load] %s: copied %d, skipped %d", table, copied, skipped)
+	if skipped > 0 {
+		log.Printf("[load] WARNING: %s skipped %d rows", table, skipped)
+		if expectedRows > 0 && float64(skipped) > 0.5*float64(expectedRows) {
+			log.Printf("[load] WARNING: %s dropped >50%% of input rows — check schema or URN reconciliation", table)
+		}
 	}
 }
