@@ -91,7 +91,7 @@ func main() {
 		log.Printf("[tier2] rig=%s root=%s", rigEntry.Name, rigEntry.Root)
 		indexers := []tier2.Tier2Indexer{
 			tier2.CSharpIndexer{},
-			// tier2.SwiftIndexer{}, // Task 17
+			tier2.SwiftIndexer{},
 			// tier2.KotlinIndexer{}, // Task 19
 		}
 		nodes, edges, err := tier2.Run(rigEntry.Name, rigEntry.Root, indexers)
