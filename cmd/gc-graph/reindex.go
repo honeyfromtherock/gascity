@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/gastownhall/gascity/internal/codegraph/rigdir"
+	"github.com/gastownhall/gascity/internal/codegraph/store"
 )
 
 // cmdReindex implements `gc graph reindex <rig-name>` or `gc graph reindex --all`.
@@ -44,6 +48,21 @@ func cmdReindex(args []string) int {
 		targets = []rigdir.Rig{r}
 	}
 
+	// Topo-sort: scip tier first, endpoint tier second. Within each tier preserve
+	// rigs.toml order so reproducibility is by config, not by sort instability.
+	sort.SliceStable(targets, func(i, j int) bool {
+		return tierOrder(targets[i].Tier) < tierOrder(targets[j].Tier)
+	})
+
+	// Resolve default canonical_from once: first scip-tier rig in rigs.toml.
+	defaultCanonical := ""
+	for _, r := range rigs {
+		if r.Tier == "scip" {
+			defaultCanonical = r.Name
+			break
+		}
+	}
+
 	failed := 0
 	for _, r := range targets {
 		sha := gitSHA(r.Root)
@@ -64,6 +83,18 @@ func cmdReindex(args []string) int {
 		}
 		if r.Profile != "" {
 			args = append(args, "--profile", r.Profile)
+		}
+		if r.Tier == "endpoint" {
+			canonical := r.CanonicalFrom
+			if canonical == "" {
+				canonical = defaultCanonical
+			}
+			if canonical != "" {
+				if ageWarning := canonicalAgeWarning(rigs, canonical); ageWarning != "" {
+					fmt.Fprintf(os.Stderr, "[reindex] %s: %s\n", r.Name, ageWarning)
+				}
+				args = append(args, "--canonical-from", canonical)
+			}
 		}
 		fmt.Fprintf(os.Stderr, "[reindex] %s ...\n", r.Name)
 		cmd := exec.Command(*binary, args...)
@@ -88,4 +119,67 @@ func gitSHA(root string) string {
 		return "none"
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// tierOrder maps tier strings to a sort key. Lower values index earlier.
+// Unknown tiers sort last so misconfigured rigs don't preempt canonical sources.
+func tierOrder(tier string) int {
+	switch tier {
+	case "scip":
+		return 0
+	case "endpoint":
+		return 1
+	default:
+		return 2
+	}
+}
+
+// canonicalAgeWarning returns a non-empty warning string if the named rig's
+// :Manifest indexed_at is older than 24h, or if the rig has no manifest at all.
+// Returns "" when the manifest is fresh.
+func canonicalAgeWarning(rigs []rigdir.Rig, name string) string {
+	ref, err := rigdir.Lookup(rigs, name)
+	if err != nil {
+		return fmt.Sprintf("canonical-from rig %q not in rigs.toml", name)
+	}
+	graphPath := filepath.Join(ref.Root, ".codegraph", "graph.kuzu")
+	if _, err := os.Stat(graphPath); err != nil {
+		return fmt.Sprintf("canonical-from rig %q has no graph yet (run 'gc graph reindex %s' first)", name, name)
+	}
+	db, err := store.Open(graphPath, store.ModeReadOnly)
+	if err != nil {
+		return fmt.Sprintf("canonical-from rig %q graph unreadable: %v", name, err)
+	}
+	defer func() { _ = db.Close() }()
+	conn := db.Connect()
+	defer func() { _ = conn.Close() }()
+	result, err := conn.Query(fmt.Sprintf("MATCH (m:Manifest {rig: '%s'}) RETURN m.indexed_at LIMIT 1;", name))
+	if err != nil {
+		return ""
+	}
+	defer result.Close()
+	if !result.HasNext() {
+		return fmt.Sprintf("canonical-from rig %q has no manifest", name)
+	}
+	row, err := result.Next()
+	if err != nil {
+		return ""
+	}
+	defer row.Close()
+	v, err := row.GetValue(0)
+	if err != nil {
+		return ""
+	}
+	tsStr, _ := v.(string)
+	if tsStr == "" {
+		return ""
+	}
+	ts, err := time.Parse(time.RFC3339, tsStr)
+	if err != nil {
+		return ""
+	}
+	if time.Since(ts) > 24*time.Hour {
+		return fmt.Sprintf("canonical-from rig %q indexed_at is %s old (>24h); consider 'gc graph reindex %s' first", name, time.Since(ts).Round(time.Hour), name)
+	}
+	return ""
 }
