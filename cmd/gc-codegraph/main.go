@@ -112,13 +112,17 @@ func main() {
 				edges, matched = scrape.ReconcileEndpointDstURNs(edges, canonicalEPs)
 				log.Printf("[canonical-from] reconciled %d/%d CALLS_EP edges", matched, len(edges))
 
-				// Remove placeholder :Endpoint nodes whose URN is now superseded
-				// by a canonical match. An endpoint is "superseded" if at least
-				// one edge that originally targeted it now targets a canonical URN.
+				// Remove placeholder :Endpoint nodes whose URN was superseded by
+				// a canonical match, and emit canonical placeholders so the rewritten
+				// CALLS_EP edges have a valid DST in this rig's local graph (the
+				// loader silently drops edges whose endpoints don't resolve via
+				// IGNORE_ERRORS=true).
 				supersededURNs := map[string]bool{}
+				canonicalURNs := map[string]bool{}
 				for _, e := range edges {
 					if orig, ok := e.Props["original_urn"].(string); ok {
 						supersededURNs[orig] = true
+						canonicalURNs[e.DstURN] = true
 					}
 				}
 				filtered := nodes[:0]
@@ -129,6 +133,21 @@ func main() {
 					filtered = append(filtered, n)
 				}
 				nodes = filtered
+				// Emit a local :Endpoint placeholder for each canonical URN that
+				// CALLS_EP now points at. These mirror the upstream rig's catalog
+				// minimally — full props live in the canonical rig.
+				for urn := range canonicalURNs {
+					nodes = append(nodes, facts.NodeFact{
+						Kind: facts.KindEndpoint,
+						URN:  urn,
+						Props: map[string]any{
+							"urn":       urn,
+							"transport": "reconciled",
+							"route":     "",
+							"verb":      "",
+						},
+					})
+				}
 			}
 		}
 

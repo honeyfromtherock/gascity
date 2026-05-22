@@ -88,8 +88,8 @@ func Run(rig, root string, indexers []Tier2Indexer) ([]facts.NodeFact, []facts.E
 					DstKind: facts.KindEndpoint,
 					DstURN:  epURN,
 					Props: map[string]any{
-						"line":    c.Line,
-						"dynamic": c.Dynamic,
+						"site_line": c.Line,
+						"dynamic":   c.Dynamic,
 					},
 				})
 			}

@@ -171,11 +171,17 @@ func parseApproxEndpointURN(urn string) (method, path string, ok bool) {
 	return rest[:sp], rest[sp+1:], true
 }
 
-// normalizeEndpointPath replaces /{param}/ segments with /*/ for matching.
+// normalizeEndpointPath normalizes a path for cross-form matching:
+//   - strips leading "/" so "/foo/bar" and "foo/bar" compare equal
+//   - replaces /{param}/ (Retrofit/OpenAPI style) with /*/
+//   - replaces /:param/ (Encore/Express style) with /*/
 func normalizeEndpointPath(p string) string {
+	p = strings.TrimPrefix(p, "/")
 	parts := strings.Split(p, "/")
 	for i, s := range parts {
 		if len(s) >= 2 && s[0] == '{' && s[len(s)-1] == '}' {
+			parts[i] = "*"
+		} else if len(s) >= 2 && s[0] == ':' {
 			parts[i] = "*"
 		}
 	}
