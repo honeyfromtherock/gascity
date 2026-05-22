@@ -22,6 +22,7 @@ var nodeOrder = []string{
 	"File", "Module", "Commit",
 	"Function", "Method", "Class", "Interface", "Field", "Test", "Endpoint",
 	"DbTable", "DbColumn", "DbIndex",
+	"Manifest",
 }
 
 // relOrder controls the order in which rel tables are loaded.
@@ -49,6 +50,7 @@ var nodeColumns = map[string][]string{
 	"DbTable":   {"qname", "schema_name", "name"},
 	"DbColumn":  {"qname", "table_qname", "name", "type", "nullable"},
 	"DbIndex":   {"qname", "table_qname", "kind"},
+	"Manifest":  {"rig", "sha", "profile", "indexed_at", "indexer_version", "tier"},
 }
 
 // relColumns defines the non-meta columns for each rel table (edge properties
