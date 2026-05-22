@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/gastownhall/gascity/internal/codegraph/rigdir"
 	"github.com/gastownhall/gascity/internal/codegraph/store"
@@ -28,14 +27,9 @@ func cmdEndpointConsumers(args []string) int {
 		return 2
 	}
 
-	rigsPath, err := rigdir.DefaultPath()
+	rigs, err := LoadRigs()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "rigdir: %v\n", err)
-		return 1
-	}
-	rigs, err := rigdir.Load(rigsPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "rigdir load: %v\n", err)
+		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	if len(rigs) == 0 {
@@ -43,54 +37,17 @@ func cmdEndpointConsumers(args []string) int {
 		return 1
 	}
 
-	hostPath := filepath.Join(rigs[0].Root, ".codegraph", "graph.kuzu")
-	db, err := store.Open(hostPath, store.ModeReadWrite)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "open host (%s): %v\n", hostPath, err)
-		return 1
-	}
-	defer func() { _ = db.Close() }()
-
-	// Attach remaining rigs one-at-a-time so a single bad alias doesn't
-	// disable cross-rig querying entirely. LadybugDB's parser rejects
-	// hyphenated raw identifiers in `AS <alias>`, so rigs with hyphenated
-	// names will fail to attach until the quoting story is unified
-	// (tracked under Phase 2 Task 16). Host rig is always queryable.
-	attached := map[string]bool{rigs[0].Name: true}
-	for _, r := range rigs[1:] {
-		if err := AttachAll(db, []rigdir.Rig{r}); err != nil {
-			fmt.Fprintf(os.Stderr, "attach %s: %v (skipping)\n", r.Name, err)
-			continue
-		}
-		attached[r.Name] = true
-	}
-
-	conn := db.Connect()
-	defer func() { _ = conn.Close() }()
-
 	fmt.Fprintf(os.Stdout, "%-25s %-9s %-60s %s\n", "RIG", "TIER", "CALLER", "LINE")
 	total := 0
-	anyAttached := len(attached) > 1
-	for i, r := range rigs {
-		if !attached[r.Name] {
-			continue
-		}
-		// USE switches the active database scope. If nothing else was
-		// attached, the host rig is already the default — skipping USE
-		// also avoids LadybugDB's hyphenated-identifier parser quirk.
-		if anyAttached || i > 0 {
-			if err := conn.Exec("USE " + Alias(r.Name) + ";"); err != nil {
-				fmt.Fprintf(os.Stderr, "[%s] USE failed: %v\n", r.Name, err)
-				continue
-			}
-		}
+	if err := ForEachRig(rigs, func(r rigdir.Rig, alias string, conn *store.Conn) error {
 		q := "MATCH (caller)-[c:CALLS_EP]->(e:Endpoint) WHERE e.urn = $urn " +
 			"RETURN caller.path, c.site_line LIMIT 200;"
 		rows, err := conn.Query(q, map[string]any{"urn": *urn})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[%s] query: %v\n", r.Name, err)
-			continue
+			return nil
 		}
+		defer rows.Close()
 		for rows.HasNext() {
 			t, err := rows.Next()
 			if err != nil {
@@ -102,7 +59,10 @@ func cmdEndpointConsumers(args []string) int {
 			t.Close()
 			total++
 		}
-		rows.Close()
+		return nil
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
 	}
 	if total == 0 {
 		return 2

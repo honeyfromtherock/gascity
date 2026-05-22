@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/gastownhall/gascity/cmd/gc-graph/internal"
+	"github.com/gastownhall/gascity/internal/codegraph/rigdir"
+	"github.com/gastownhall/gascity/internal/codegraph/store"
 )
 
 // cmdFind implements `gc graph find <query> --rig <name>`. Phase 1 uses
@@ -22,14 +24,19 @@ func cmdFind(args []string) int {
 	kind := fs.String("kind", "Function", "Function|Method|Class|Interface|File")
 	limit := fs.Int("limit", 20, "")
 	jsonOut := fs.Bool("json", false, "")
+	allRigs := fs.Bool("all-rigs", false, "ATTACH all rigs from ~/.codegraph/rigs.toml and query across them")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if (*rig == "" && *root == "") || fs.NArg() < 1 {
-		fmt.Fprintln(os.Stderr, "usage: gc graph find <query> --rig <name> [--root <path>] [--kind Function]")
+	if fs.NArg() < 1 || (!*allRigs && *rig == "" && *root == "") {
+		fmt.Fprintln(os.Stderr, "usage: gc graph find <query> --rig <name> [--root <path>] [--kind Function] [--all-rigs]")
 		return 2
 	}
 	q := fs.Arg(0)
+
+	if *allRigs {
+		return findAllRigs(q, *kind, *limit, *jsonOut)
+	}
 
 	db, err := internal.OpenRig(*rig, *root)
 	if err != nil {
@@ -79,6 +86,68 @@ func cmdFind(args []string) int {
 	}
 	if len(results) == 0 {
 		return 2 // empty + fresh (trustworthy)
+	}
+	return 0
+}
+
+// findAllRigs runs the find query across every registered rig via ForEachRig.
+func findAllRigs(q, kind string, limit int, jsonOut bool) int {
+	rigs, err := LoadRigs()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	cypher := buildFindQuery(kind, limit)
+	type row struct {
+		Rig  string `json:"rig"`
+		URN  any    `json:"urn"`
+		Name any    `json:"name"`
+		File any    `json:"file"`
+	}
+	var all []row
+	total := 0
+	err = ForEachRig(rigs, func(r rigdir.Rig, alias string, conn *store.Conn) error {
+		rows, err := conn.Query(cypher, map[string]any{"q": strings.ToLower(q)})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[%s] query: %v\n", r.Name, err)
+			return nil
+		}
+		defer rows.Close()
+		printed := false
+		for rows.HasNext() {
+			t, err := rows.Next()
+			if err != nil {
+				break
+			}
+			urn, _ := t.GetValue(0)
+			name, _ := t.GetValue(1)
+			fl, _ := t.GetValue(2)
+			if jsonOut {
+				all = append(all, row{Rig: r.Name, URN: urn, Name: name, File: fl})
+			} else {
+				if !printed {
+					fmt.Printf("[rig=%s]\n", r.Name)
+					printed = true
+				}
+				fmt.Printf("%-40s %-40s %s\n", name, urn, fl)
+			}
+			t.Close()
+			total++
+		}
+		return nil
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if jsonOut {
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{
+			"result": all,
+			"meta":   map[string]any{"all_rigs": true, "fidelity": "high", "backend": "cypher-contains"},
+		})
+	}
+	if total == 0 {
+		return 2
 	}
 	return 0
 }

@@ -6,6 +6,8 @@ import (
 	"os"
 
 	"github.com/gastownhall/gascity/cmd/gc-graph/internal"
+	"github.com/gastownhall/gascity/internal/codegraph/rigdir"
+	"github.com/gastownhall/gascity/internal/codegraph/store"
 )
 
 // cmdCallers implements `gc graph callers <urn> --rig <name> [--depth N]`.
@@ -16,14 +18,64 @@ func cmdCallers(args []string) int {
 	rig := fs.String("rig", "", "")
 	root := fs.String("root", "", "override rig root path (skips rig resolution)")
 	depth := fs.Int("depth", 1, "")
+	allRigs := fs.Bool("all-rigs", false, "ATTACH all rigs from ~/.codegraph/rigs.toml and query across them")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if (*rig == "" && *root == "") || fs.NArg() < 1 {
-		fmt.Fprintln(os.Stderr, "usage: gc graph callers <urn> --rig <name> [--root <path>] [--depth N]")
+	if fs.NArg() < 1 || (!*allRigs && *rig == "" && *root == "") {
+		fmt.Fprintln(os.Stderr, "usage: gc graph callers <urn> --rig <name> [--root <path>] [--depth N] [--all-rigs]")
 		return 2
 	}
 	urn := fs.Arg(0)
+
+	cypher := fmt.Sprintf(`
+			MATCH (caller)-[:CALLS*1..%d]->(target)
+			WHERE target.urn = $urn
+			RETURN DISTINCT caller.qname AS qname, caller.file AS file, caller.start_line AS line
+			LIMIT 200`, *depth)
+
+	if *allRigs {
+		rigs, err := LoadRigs()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		total := 0
+		err = ForEachRig(rigs, func(r rigdir.Rig, alias string, conn *store.Conn) error {
+			rows, err := conn.Query(cypher, map[string]any{"urn": urn})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[%s] query: %v\n", r.Name, err)
+				return nil
+			}
+			defer rows.Close()
+			printed := false
+			for rows.HasNext() {
+				t, err := rows.Next()
+				if err != nil {
+					break
+				}
+				qn, _ := t.GetValue(0)
+				fl, _ := t.GetValue(1)
+				ln, _ := t.GetValue(2)
+				if !printed {
+					fmt.Printf("[rig=%s]\n", r.Name)
+					printed = true
+				}
+				fmt.Printf("%s\t%s:%v\n", qn, fl, ln)
+				t.Close()
+				total++
+			}
+			return nil
+		})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if total == 0 {
+			return 2
+		}
+		return 0
+	}
 
 	db, err := internal.OpenRig(*rig, *root)
 	if err != nil {
@@ -36,11 +88,6 @@ func cmdCallers(args []string) int {
 
 	// LadybugDB v0.12.2: [:CALLS*1..N] bounded depth (no SHORTEST — parser
 	// rejects the SHORTEST keyword in relationship patterns).
-	cypher := fmt.Sprintf(`
-		MATCH (caller)-[:CALLS*1..%d]->(target)
-		WHERE target.urn = $urn
-		RETURN DISTINCT caller.qname AS qname, caller.file AS file, caller.start_line AS line
-		LIMIT 200`, *depth)
 	rows, err := c.Query(cypher, map[string]any{"urn": urn})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

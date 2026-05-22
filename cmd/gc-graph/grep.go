@@ -18,14 +18,33 @@ func cmdGrep(args []string) int {
 	fs := flag.NewFlagSet("grep", flag.ExitOnError)
 	rig := fs.String("rig", "", "")
 	root := fs.String("root", "", "override rig root path (skips rig resolution)")
+	allRigs := fs.Bool("all-rigs", false, "ripgrep across every rig root from ~/.codegraph/rigs.toml")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if (*rig == "" && *root == "") || fs.NArg() < 1 {
-		fmt.Fprintln(os.Stderr, "usage: gc graph grep <symbol> --rig <name> [--root <path>]")
+	if fs.NArg() < 1 || (!*allRigs && *rig == "" && *root == "") {
+		fmt.Fprintln(os.Stderr, "usage: gc graph grep <symbol> --rig <name> [--root <path>] [--all-rigs]")
 		return 2
 	}
 	sym := fs.Arg(0)
+
+	if *allRigs {
+		rigs, err := LoadRigs()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		// --all-rigs runs rg per rig root rather than threading through
+		// ForEachRig: grep is a filesystem op, not a graph query, and we
+		// want raw file hits even on rigs that haven't been indexed yet.
+		for _, r := range rigs {
+			fmt.Printf("[rig=%s]\n", r.Name)
+			cmd := exec.Command("rg", "-n", "--", sym, r.Root)
+			cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+			_ = cmd.Run()
+		}
+		return 0
+	}
 
 	// Graph-first: Cypher CONTAINS scan (FTS unavailable on Ladybug v0.12.2)
 	db, err := internal.OpenRig(*rig, *root)
