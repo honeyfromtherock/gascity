@@ -48,6 +48,14 @@ func cmdReindex(args []string) int {
 	for _, r := range targets {
 		sha := gitSHA(r.Root)
 		out := r.Root + "/.codegraph"
+		// Clean prior graph artifacts to avoid duplicate-PK errors on re-load
+		// and to clear stale Ladybug WAL files / shard outputs that block reopen.
+		_ = os.RemoveAll(out + "/graph.kuzu")
+		_ = os.RemoveAll(out + "/graph.kuzu.wal")
+		_ = os.RemoveAll(out + "/graph.kuzu.tmp")
+		_ = os.RemoveAll(out + "/shards")
+		_ = os.RemoveAll(out + "/parquet")
+		_ = os.RemoveAll(out + "/csv")
 		args := []string{
 			"--rig", r.Name,
 			"--root", r.Root,
