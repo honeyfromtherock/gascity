@@ -145,7 +145,12 @@ func ReconcileEndpointDstURNs(edges []facts.EdgeFact, endpoints []facts.NodeFact
 			continue
 		}
 		if urn, found := canon[key{method, normalizeEndpointPath(path)}]; found {
+			original := edges[i].DstURN
 			edges[i].DstURN = urn
+			if edges[i].Props == nil {
+				edges[i].Props = map[string]any{}
+			}
+			edges[i].Props["original_urn"] = original
 			matched++
 		}
 	}

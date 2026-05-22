@@ -41,4 +41,15 @@ func TestReconcileEndpointDstURNs(t *testing.T) {
 	if out[2].DstURN != "endpoint:path:POST /unknown" {
 		t.Errorf("edge[2] should be unchanged, got %q", out[2].DstURN)
 	}
+	// Rewritten edges record their original URN for debug visibility.
+	if got := out[0].Props["original_urn"]; got != "endpoint:path:POST /auth/login" {
+		t.Errorf("edge[0] Props[original_urn] = %v, want %q", got, "endpoint:path:POST /auth/login")
+	}
+	if got := out[1].Props["original_urn"]; got != "endpoint:path:GET /work-orders/{id}" {
+		t.Errorf("edge[1] Props[original_urn] = %v", got)
+	}
+	// Untouched edges do NOT get original_urn (their DstURN was the original).
+	if _, ok := out[2].Props["original_urn"]; ok {
+		t.Errorf("edge[2] should not have original_urn; was not rewritten")
+	}
 }
