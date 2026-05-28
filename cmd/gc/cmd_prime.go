@@ -622,15 +622,17 @@ func gatherGraphContext(beadID string, maxTokens int) (string, error) {
 	if _, err := exec.LookPath(bin); err != nil {
 		return "", fmt.Errorf("gc-graph not on PATH: %w", err)
 	}
-	// Note: gc-graph prime doesn't support --max-tokens directly; the cap is
-	// honored at the inner `gc graph blast --max-tokens` call gc-graph prime makes
-	// per touched-file. maxTokens is reserved for a future direct cap on the prime
-	// output once gc-graph prime exposes one.
-	_ = maxTokens
 	cmd := exec.Command(bin, "prime", "--bead", beadID, "--out", "-")
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("exec %s prime: %w", bin, err)
+	}
+	// Post-capture cap: gc-graph prime concatenates per-URN consumer dumps
+	// and per-file blast outputs without an overall ceiling, so beads with
+	// many touched files can produce multi-thousand-token appendices that
+	// displace prompt-body reasoning context. ~4 chars per token rule of thumb.
+	if maxTokens > 0 && len(out) > maxTokens*4 {
+		out = append(out[:maxTokens*4], []byte("\n\n<...graph context truncated; run `gc-graph prime --bead <id>` for full output>\n")...)
 	}
 	return string(out), nil
 }

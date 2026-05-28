@@ -1,5 +1,5 @@
 <!-- gc-graph:doctrine start -->
 ## Codegraph
 
-This repo is indexed in the codegraph. For structural questions ("who calls X", "what handles endpoint Y", "blast radius of editing Z"), prefer `gc graph` over ripgrep — the graph already knows the answers and ripgrep produces noisy text matches. Run `gc graph rigs` to confirm freshness; `gc graph reindex <this-rig>` if stale.
+This rig is indexed in the codegraph — run `gc graph rigs` to check freshness, `gc graph reindex <this-rig>` if stale. See the `gc-graph` skill for query usage.
 <!-- gc-graph:doctrine end -->
