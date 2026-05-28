@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -65,9 +66,10 @@ func TestHookUserPromptIgnoresPromptsWithoutURNs(t *testing.T) {
 
 // Ensures the per-prompt URN match cap (3) is respected.
 func TestHookUserPromptCapsURNsPerPrompt(t *testing.T) {
+	patterns := []*regexp.Regexp{regexp.MustCompile(defaultEndpointURNPattern)}
 	urns := extractEndpointURNs(map[string]any{
 		"prompt": "endpoint:a.A endpoint:b.B endpoint:c.C endpoint:d.D endpoint:e.E",
-	})
+	}, patterns)
 	if len(urns) > 3 {
 		t.Errorf("got %d URNs, want <= 3 (cap is 3)", len(urns))
 	}

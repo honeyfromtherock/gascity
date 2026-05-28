@@ -17,6 +17,7 @@ type Rig struct {
 	Tier          string `toml:"tier"`                     // "scip" or "endpoint"
 	Profile       string `toml:"profile,omitempty"`        // optional profile name (e.g. "core")
 	CanonicalFrom string `toml:"canonical_from,omitempty"` // optional: rig to reference for canonical Endpoint URNs (endpoint-tier only)
+	URNPattern    string `toml:"urn_pattern,omitempty"`    // optional Go regexp matching this rig's endpoint URNs in agent prompts; default matches the canonical "endpoint:<service>.<Method>" form
 }
 
 type fileShape struct {

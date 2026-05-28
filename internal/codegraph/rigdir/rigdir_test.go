@@ -117,3 +117,35 @@ tier = "endpoint"
 		}
 	}
 }
+
+func TestLoadURNPattern(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "rigs.toml")
+	if err := os.WriteFile(path, []byte(`
+[[rig]]
+name = "core"
+root = "/abs/core"
+tier = "scip"
+
+[[rig]]
+name = "android"
+root = "/abs/android"
+tier = "endpoint"
+urn_pattern = "endpoint:[a-z_]+\\.[A-Z][a-zA-Z0-9_]*"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rigs, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPattern := map[string]string{
+		"core":    "",
+		"android": `endpoint:[a-z_]+\.[A-Z][a-zA-Z0-9_]*`,
+	}
+	for _, r := range rigs {
+		if r.URNPattern != wantPattern[r.Name] {
+			t.Errorf("rig %q URNPattern = %q, want %q", r.Name, r.URNPattern, wantPattern[r.Name])
+		}
+	}
+}
