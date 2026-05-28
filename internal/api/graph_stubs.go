@@ -10,13 +10,6 @@ type GraphStubInput struct{}
 type GraphStubOutput struct {
 	Body []any `json:"-"`
 }
-type GraphPathInput struct {
-	URN string `path:"urn"`
-}
-
-func handleGraphEndpointConsumers(_ context.Context, _ *GraphPathInput) (*GraphStubOutput, error) {
-	return &GraphStubOutput{}, nil
-}
 func handleGraphBlast(_ context.Context, _ *GraphStubInput) (*GraphStubOutput, error) {
 	return &GraphStubOutput{}, nil
 }
