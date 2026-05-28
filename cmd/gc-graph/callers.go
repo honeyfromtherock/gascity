@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/gastownhall/gascity/cmd/gc-graph/internal"
-	"github.com/gastownhall/gascity/internal/codegraph/rigdir"
-	"github.com/gastownhall/gascity/internal/codegraph/store"
+	"github.com/gastownhall/gascity/internal/codegraph/queries"
 )
 
 // cmdCallers implements `gc graph callers <urn> --rig <name> [--depth N]`.
@@ -28,87 +26,24 @@ func cmdCallers(args []string) int {
 	}
 	urn := fs.Arg(0)
 
-	cypher := fmt.Sprintf(`
-			MATCH (caller)-[:CALLS*1..%d]->(target)
-			WHERE target.urn = $urn
-			RETURN DISTINCT caller.qname AS qname, caller.file AS file, caller.start_line AS line
-			LIMIT 200`, *depth)
+	// Suppress unused-variable warnings: rig/root/allRigs are accepted for
+	// CLI backward compatibility but rig selection now happens inside
+	// queries.Callers (first scip-tier rig, falling back to first rig).
+	_ = rig
+	_ = root
+	_ = allRigs
 
-	if *allRigs {
-		rigs, err := LoadRigs()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		total := 0
-		err = ForEachRig(rigs, func(r rigdir.Rig, alias string, conn *store.Conn) error {
-			rows, err := conn.Query(cypher, map[string]any{"urn": urn})
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "[%s] query: %v\n", r.Name, err)
-				return nil
-			}
-			defer rows.Close()
-			printed := false
-			for rows.HasNext() {
-				t, err := rows.Next()
-				if err != nil {
-					break
-				}
-				qn, _ := t.GetValue(0)
-				fl, _ := t.GetValue(1)
-				ln, _ := t.GetValue(2)
-				if !printed {
-					fmt.Printf("[rig=%s]\n", r.Name)
-					printed = true
-				}
-				fmt.Printf("%s\t%s:%v\n", qn, fl, ln)
-				t.Close()
-				total++
-			}
-			return nil
-		})
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		if total == 0 {
-			return 2
-		}
-		return 0
-	}
-
-	db, err := internal.OpenRig(*rig, *root)
+	rigs, err := LoadRigs()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	defer func() { _ = db.Close() }()
-	c := db.Connect()
-	defer func() { _ = c.Close() }()
 
-	// LadybugDB v0.12.2: [:CALLS*1..N] bounded depth (no SHORTEST — parser
-	// rejects the SHORTEST keyword in relationship patterns).
-	rows, err := c.Query(cypher, map[string]any{"urn": urn})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+	callers := queries.Callers(rigs, urn, *depth, 200)
+	for _, c := range callers {
+		fmt.Printf("%s\t%s:%d\n", c.URN, c.File, c.Line)
 	}
-	defer rows.Close()
-	count := 0
-	for rows.HasNext() {
-		t, err := rows.Next()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		qn, _ := t.GetValue(0)
-		fl, _ := t.GetValue(1)
-		ln, _ := t.GetValue(2)
-		fmt.Printf("%s\t%s:%v\n", qn, fl, ln)
-		t.Close()
-		count++
-	}
-	if count == 0 {
+	if len(callers) == 0 {
 		return 2
 	}
 	return 0

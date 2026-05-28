@@ -9,9 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gastownhall/gascity/cmd/gc-graph/internal"
-	"github.com/gastownhall/gascity/internal/codegraph/rigdir"
-	"github.com/gastownhall/gascity/internal/codegraph/store"
+	"github.com/gastownhall/gascity/internal/codegraph/queries"
 )
 
 // cmdBlast implements `gc graph blast <urn> --rig <name> [--depth N]`.
@@ -35,40 +33,22 @@ func cmdBlast(args []string) int {
 		return 2
 	}
 
-	// Resolve URN from --file if positional urn missing.
 	urn := ""
 	if fs.NArg() >= 1 {
 		urn = fs.Arg(0)
 	}
+
+	// Hook-friendly --file path: graceful no-op when the file isn't under
+	// any rig and the caller asked for hook output.
 	if urn == "" && *file != "" {
-		rigName, resolved, err := resolveFileURN(*file)
-		if err != nil {
-			if *format == "hook" {
-				fmt.Fprintln(os.Stdout, "<gc graph: file not in graph>")
-				return 0
-			}
-			fmt.Fprintf(os.Stderr, "blast --file: %v\n", err)
-			return 1
-		}
-		urn = resolved
-		if *rig == "" {
-			*rig = rigName
-		}
-		// Resolve --root from rigs.toml so internal.OpenRig opens the right DB
-		// without needing the gc rig path / assets/<rig> conventions.
-		if *root == "" {
-			if rigs, err := LoadRigs(); err == nil {
-				for _, r := range rigs {
-					if r.Name == rigName {
-						*root = r.Root
-						break
-					}
-				}
-			}
+		_, _, ferr := resolveFileURN(*file)
+		if ferr != nil && *format == "hook" {
+			fmt.Fprintln(os.Stdout, "<gc graph: file not in graph>")
+			return 0
 		}
 	}
 
-	if urn == "" || (!*allRigs && *rig == "" && *root == "") {
+	if urn == "" && *file == "" {
 		if *format == "hook" {
 			fmt.Fprintln(os.Stdout, "<gc graph: missing urn or rig>")
 			return 0
@@ -76,58 +56,44 @@ func cmdBlast(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: gc graph blast <urn>|--file <path> --rig <name> [--root <path>] [--depth N] [--all-rigs] [--format json|hook] [--max-tokens N]")
 		return 2
 	}
-	queries := blastQueries(*depth)
 
-	if *allRigs {
-		rigs, err := LoadRigs()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		perRig := map[string]map[string][]string{}
-		err = ForEachRig(rigs, func(r rigdir.Rig, alias string, conn *store.Conn) error {
-			out := map[string][]string{
-				"symbols": {}, "files": {}, "tests": {}, "endpoints": {}, "db_columns": {},
-			}
-			runBlastQueries(conn, queries, urn, out)
-			perRig[r.Name] = out
-			return nil
-		})
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		if *format == "hook" {
-			merged := map[string][]string{
-				"symbols": {}, "files": {}, "tests": {}, "endpoints": {}, "db_columns": {},
-			}
-			for _, out := range perRig {
-				for k, v := range out {
-					merged[k] = append(merged[k], v...)
-				}
-			}
-			fmt.Print(emitHookFormat(urn, merged, *maxTokens))
-			return 0
-		}
-		_ = json.NewEncoder(os.Stdout).Encode(perRig)
-		return 0
-	}
+	// Suppress unused-variable complaints for legacy CLI flags retained for
+	// backward compatibility. Rig/root selection now happens inside
+	// queries.Blast based on the file resolution; --all-rigs is currently
+	// reduced to single-rig dispatch (queries.Blast picks one rig).
+	_ = rig
+	_ = root
+	_ = allRigs
 
-	db, err := internal.OpenRig(*rig, *root)
+	rigs, err := LoadRigs()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	defer func() { _ = db.Close() }()
-	c := db.Connect()
-	defer func() { _ = c.Close() }()
+
+	result := queries.Blast(rigs, *file, urn, *depth, 500)
+
+	subject := urn
+	if subject == "" {
+		subject = result.Subject
+	}
 
 	out := map[string][]string{
-		"symbols": {}, "files": {}, "tests": {}, "endpoints": {}, "db_columns": {},
+		"symbols":    result.Symbols,
+		"files":      result.Files,
+		"tests":      result.Tests,
+		"endpoints":  result.Endpoints,
+		"db_columns": result.DbColumns,
 	}
-	runBlastQueries(c, queries, urn, out)
+	// Ensure non-nil slices for stable JSON output.
+	for k, v := range out {
+		if v == nil {
+			out[k] = []string{}
+		}
+	}
+
 	if *format == "hook" {
-		fmt.Print(emitHookFormat(urn, out, *maxTokens))
+		fmt.Print(emitHookFormat(subject, out, *maxTokens))
 		return 0
 	}
 	_ = json.NewEncoder(os.Stdout).Encode(out)
@@ -204,42 +170,4 @@ func emitHookFormat(urn string, out map[string][]string, maxTokens int) string {
 		}
 	}
 	return s
-}
-
-func blastQueries(depth int) map[string]string {
-	return map[string]string{
-		"symbols": fmt.Sprintf(
-			`MATCH (n)-[:CALLS|REFERENCES*1..%d]->(t) WHERE t.urn=$urn
-				 RETURN DISTINCT n.qname LIMIT 500`, depth),
-		"tests": `MATCH (t:Test)-[:TESTS|CALLS*1..4]->(s) WHERE s.urn=$urn
-				   RETURN DISTINCT t.file LIMIT 200`,
-		"endpoints": `MATCH (n)-[:HANDLES|CALLS_EP]->(e:Endpoint)
-		               WHERE n.urn=$urn OR n.path=$urn
-					   RETURN DISTINCT e.urn LIMIT 200`,
-		"db_columns": `MATCH (n)-[:READS_COL|WRITES_COL]->(c:DbColumn) WHERE n.urn=$urn
-						RETURN DISTINCT c.qname LIMIT 200`,
-	}
-}
-
-// runBlastQueries executes each label/cypher pair against the connection,
-// accumulating row values into out[label]. Per-section errors are logged to
-// stderr (e.g. missing tables on a non-core rig) but never fatal.
-func runBlastQueries(c *store.Conn, queries map[string]string, urn string, out map[string][]string) {
-	for label, cypher := range queries {
-		rows, err := c.Query(cypher, map[string]any{"urn": urn})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "warn: %s: %v\n", label, err)
-			continue
-		}
-		for rows.HasNext() {
-			t, err := rows.Next()
-			if err != nil {
-				break
-			}
-			v, _ := t.GetValue(0)
-			out[label] = append(out[label], fmt.Sprint(v))
-			t.Close()
-		}
-		rows.Close()
-	}
 }
