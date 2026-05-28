@@ -12,7 +12,7 @@ import (
 // RegisterGraphRoutes wires the /v0/graph/* endpoints onto the supervisor mux.
 // Called once from huma_handlers_supervisor.go.
 func RegisterGraphRoutes(sm *SupervisorMux) {
-	huma.Get(sm.humaAPI, "/v0/graph/rigs", handleGraphRigs)
+	huma.Get(sm.humaAPI, "/v0/graph/rigs", handleGraphRigsImpl)
 	huma.Get(sm.humaAPI, "/v0/graph/endpoints", handleGraphEndpoints)
 	huma.Get(sm.humaAPI, "/v0/graph/endpoints/{urn}/consumers", handleGraphEndpointConsumers)
 	huma.Get(sm.humaAPI, "/v0/graph/blast", handleGraphBlast)
