@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Edit|Write|MultiEdit",
+      "hooks": [{
+        "type": "command",
+        "command": "gc graph hook pre-edit",
+        "timeout": 5000
+      }]
+    }],
+    "UserPromptSubmit": [{
+      "hooks": [{
+        "type": "command",
+        "command": "gc graph hook user-prompt",
+        "timeout": 5000
+      }]
+    }]
+  }
+}
