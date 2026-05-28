@@ -198,6 +198,12 @@
               "null"
             ]
           },
+          "GraphContext": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "HooksInstalled": {
             "type": [
               "boolean",
@@ -491,6 +497,7 @@
           "MCPAppend",
           "HooksInstalled",
           "InjectAssignedSkills",
+          "GraphContext",
           "SessionSetup",
           "SessionSetupScript",
           "SessionLive",
@@ -1064,6 +1071,68 @@
         ],
         "type": "string"
       },
+      "BlastResult": {
+        "additionalProperties": false,
+        "properties": {
+          "db_columns": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "endpoints": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "files": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "subject": {
+            "type": "string"
+          },
+          "symbols": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "tests": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "subject",
+          "symbols",
+          "files",
+          "tests",
+          "endpoints",
+          "db_columns"
+        ],
+        "type": "object"
+      },
       "BoundEventPayload": {
         "additionalProperties": false,
         "properties": {
@@ -1081,6 +1150,25 @@
           "provider",
           "conversation_id",
           "session_id"
+        ],
+        "type": "object"
+      },
+      "CallerInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "urn": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "urn"
         ],
         "type": "object"
       },
@@ -1467,6 +1555,30 @@
           "valid",
           "errors",
           "warnings"
+        ],
+        "type": "object"
+      },
+      "ConsumerInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "caller": {
+            "type": "string"
+          },
+          "line": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "rig": {
+            "type": "string"
+          },
+          "tier": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "rig",
+          "tier",
+          "caller"
         ],
         "type": "object"
       },
@@ -1870,6 +1982,31 @@
           "issue_id",
           "depends_on_id",
           "type"
+        ],
+        "type": "object"
+      },
+      "EndpointInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "rig": {
+            "type": "string"
+          },
+          "route": {
+            "type": "string"
+          },
+          "transport": {
+            "type": "string"
+          },
+          "urn": {
+            "type": "string"
+          },
+          "verb": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "urn",
+          "rig"
         ],
         "type": "object"
       },
@@ -5353,6 +5490,34 @@
         "required": [
           "status",
           "rig"
+        ],
+        "type": "object"
+      },
+      "RigInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "indexed_at": {
+            "type": "string"
+          },
+          "indexer_version": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "sha": {
+            "type": "string"
+          },
+          "tier": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "tier"
         ],
         "type": "object"
       },
@@ -23093,6 +23258,345 @@
           }
         },
         "summary": "Stream tagged events from all running cities."
+      }
+    },
+    "/v0/graph/blast": {
+      "get": {
+        "operationId": "get-v0-graph-blast",
+        "parameters": [
+          {
+            "description": "file path; mutually exclusive with urn",
+            "explode": false,
+            "in": "query",
+            "name": "file",
+            "schema": {
+              "description": "file path; mutually exclusive with urn",
+              "type": "string"
+            }
+          },
+          {
+            "description": "symbol URN; mutually exclusive with file",
+            "explode": false,
+            "in": "query",
+            "name": "urn",
+            "schema": {
+              "description": "symbol URN; mutually exclusive with file",
+              "type": "string"
+            }
+          },
+          {
+            "description": "transitive depth cap",
+            "explode": false,
+            "in": "query",
+            "name": "depth",
+            "schema": {
+              "default": 3,
+              "description": "transitive depth cap",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "per-section row cap",
+            "explode": false,
+            "in": "query",
+            "name": "max_results",
+            "schema": {
+              "default": 200,
+              "description": "per-section row cap",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlastResult"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "X-GC-Request-Id": {
+                "$ref": "#/components/headers/X-GC-Request-Id"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error",
+            "headers": {
+              "X-GC-Request-Id": {
+                "$ref": "#/components/headers/X-GC-Request-Id"
+              }
+            }
+          }
+        },
+        "summary": "Get v0 graph blast"
+      }
+    },
+    "/v0/graph/callers": {
+      "get": {
+        "operationId": "list-v0-graph-callers",
+        "parameters": [
+          {
+            "description": "symbol URN to find callers of",
+            "explode": false,
+            "in": "query",
+            "name": "urn",
+            "required": true,
+            "schema": {
+              "description": "symbol URN to find callers of",
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "depth",
+            "schema": {
+              "default": 3,
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "max_results",
+            "schema": {
+              "default": 200,
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CallerInfo"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "X-GC-Request-Id": {
+                "$ref": "#/components/headers/X-GC-Request-Id"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error",
+            "headers": {
+              "X-GC-Request-Id": {
+                "$ref": "#/components/headers/X-GC-Request-Id"
+              }
+            }
+          }
+        },
+        "summary": "List v0 graph callers"
+      }
+    },
+    "/v0/graph/endpoints": {
+      "get": {
+        "operationId": "list-v0-graph-endpoints",
+        "parameters": [
+          {
+            "description": "filter to a single rig name",
+            "explode": false,
+            "in": "query",
+            "name": "rig",
+            "schema": {
+              "description": "filter to a single rig name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "substring URN filter",
+            "explode": false,
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "description": "substring URN filter",
+              "type": "string"
+            }
+          },
+          {
+            "description": "max rows total (across all rigs)",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 200,
+              "description": "max rows total (across all rigs)",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EndpointInfo"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "X-GC-Request-Id": {
+                "$ref": "#/components/headers/X-GC-Request-Id"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error",
+            "headers": {
+              "X-GC-Request-Id": {
+                "$ref": "#/components/headers/X-GC-Request-Id"
+              }
+            }
+          }
+        },
+        "summary": "List v0 graph endpoints"
+      }
+    },
+    "/v0/graph/endpoints/{urn}/consumers": {
+      "get": {
+        "operationId": "list-v0-graph-endpoints-by-urn-consumers",
+        "parameters": [
+          {
+            "description": "canonical endpoint URN, e.g. endpoint:auth.Login",
+            "in": "path",
+            "name": "urn",
+            "required": true,
+            "schema": {
+              "description": "canonical endpoint URN, e.g. endpoint:auth.Login",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConsumerInfo"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "X-GC-Request-Id": {
+                "$ref": "#/components/headers/X-GC-Request-Id"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error",
+            "headers": {
+              "X-GC-Request-Id": {
+                "$ref": "#/components/headers/X-GC-Request-Id"
+              }
+            }
+          }
+        },
+        "summary": "List v0 graph endpoints by urn consumers"
+      }
+    },
+    "/v0/graph/rigs": {
+      "get": {
+        "operationId": "list-v0-graph-rigs",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RigInfo"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "X-GC-Request-Id": {
+                "$ref": "#/components/headers/X-GC-Request-Id"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error",
+            "headers": {
+              "X-GC-Request-Id": {
+                "$ref": "#/components/headers/X-GC-Request-Id"
+              }
+            }
+          }
+        },
+        "summary": "List v0 graph rigs"
       }
     },
     "/v0/provider-readiness": {
