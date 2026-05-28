@@ -10,9 +10,6 @@ type GraphStubInput struct{}
 type GraphStubOutput struct {
 	Body []any `json:"-"`
 }
-func handleGraphBlast(_ context.Context, _ *GraphStubInput) (*GraphStubOutput, error) {
-	return &GraphStubOutput{}, nil
-}
 func handleGraphCallers(_ context.Context, _ *GraphStubInput) (*GraphStubOutput, error) {
 	return &GraphStubOutput{}, nil
 }
