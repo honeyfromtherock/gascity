@@ -130,7 +130,6 @@ func doPrimeWithMode(args []string, stdout, stderr io.Writer, hookMode, strictMo
 }
 
 func doPrimeWithHookFormat(args []string, stdout, stderr io.Writer, hookMode bool, hookFormat string, strictMode, graphContext bool) int {
-	_ = graphContext // Task 3 wires this into the rendered prompt; accepted/threaded here.
 	agentName := os.Getenv("GC_ALIAS")
 	if agentName == "" {
 		agentName = os.Getenv("GC_AGENT")
@@ -289,6 +288,7 @@ func doPrimeWithHookFormat(args []string, stdout, stderr io.Writer, hookMode boo
 			prompt := renderPrompt(fsys.OSFS{}, cityPath, cityName, a.PromptTemplate, ctx, cfg.Workspace.SessionTemplate, stderr,
 				cfg.PackDirs, fragments, nil)
 			if prompt != "" {
+				prompt = maybeAppendGraphContext(prompt, graphContext, a, hookMode, hookContext, cityPath, stderr)
 				writePrimePromptWithFormat(stdout, cityName, ctx.AgentName, prompt, hookMode, hookFormat, suppressHookPrompt)
 				return 0
 			}
@@ -310,7 +310,8 @@ func doPrimeWithHookFormat(args []string, stdout, stderr io.Writer, hookMode boo
 			}
 			if promptFile != "" {
 				if content, fErr := os.ReadFile(filepath.Join(cityPath, promptFile)); fErr == nil {
-					writePrimePromptWithFormat(stdout, cityName, ctx.AgentName, string(content), hookMode, hookFormat, suppressHookPrompt)
+					prompt := maybeAppendGraphContext(string(content), graphContext, a, hookMode, hookContext, cityPath, stderr)
+					writePrimePromptWithFormat(stdout, cityName, ctx.AgentName, prompt, hookMode, hookFormat, suppressHookPrompt)
 					return 0
 				}
 			}
@@ -627,4 +628,54 @@ func gatherGraphContext(beadID string, maxTokens int) (string, error) {
 		return "", fmt.Errorf("exec %s prime: %w", bin, err)
 	}
 	return string(out), nil
+}
+
+// maybeAppendGraphContext appends a "## Graph context" markdown section to
+// prompt when the CLI --graph-context flag or the agent's GraphContext config
+// is enabled and a session bead is in scope. Failures are logged to stderr
+// and the original prompt is returned unchanged — graph context is additive
+// and never blocks prompt emission.
+func maybeAppendGraphContext(prompt string, graphContextFlag bool, a config.Agent, hookMode bool, hookCtx primeHookContext, cityPath string, stderr io.Writer) string {
+	effective := graphContextFlag || a.GraphContext
+	if !effective {
+		return prompt
+	}
+	if !hookMode || strings.TrimSpace(hookCtx.SessionID) == "" {
+		return prompt
+	}
+	beadID := resolveWorkBeadForSession(cityPath, hookCtx.SessionID, stderr)
+	if beadID == "" {
+		return prompt
+	}
+	ctxMD, err := gatherGraphContext(beadID, 1500)
+	if err != nil {
+		fmt.Fprintf(stderr, "[graph-context] %v\n", err) //nolint:errcheck
+		return prompt
+	}
+	if strings.TrimSpace(ctxMD) == "" {
+		return prompt
+	}
+	return prompt + "\n\n## Graph context\n\n" + ctxMD
+}
+
+// resolveWorkBeadForSession opens the beads store for cityPath and returns
+// the work bead ID for the given session ID by reading the session bead's
+// ParentID. Returns "" and logs to stderr on any failure.
+func resolveWorkBeadForSession(cityPath, sessionID string, stderr io.Writer) string {
+	store, err := openCityStoreAt(cityPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "[graph-context] beads store unavailable: %v\n", err) //nolint:errcheck
+		return ""
+	}
+
+	sessionBead, err := store.Get(sessionID)
+	if err != nil {
+		fmt.Fprintf(stderr, "[graph-context] session bead lookup failed: %v\n", err) //nolint:errcheck
+		return ""
+	}
+	if strings.TrimSpace(sessionBead.ParentID) == "" {
+		fmt.Fprintln(stderr, "[graph-context] session has no work bead (ParentID empty); skipping") //nolint:errcheck
+		return ""
+	}
+	return sessionBead.ParentID
 }
