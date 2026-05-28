@@ -14,9 +14,6 @@ type GraphPathInput struct {
 	URN string `path:"urn"`
 }
 
-func handleGraphEndpoints(_ context.Context, _ *GraphStubInput) (*GraphStubOutput, error) {
-	return &GraphStubOutput{}, nil
-}
 func handleGraphEndpointConsumers(_ context.Context, _ *GraphPathInput) (*GraphStubOutput, error) {
 	return &GraphStubOutput{}, nil
 }

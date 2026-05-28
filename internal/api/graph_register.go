@@ -13,7 +13,7 @@ import (
 // Called once from huma_handlers_supervisor.go.
 func RegisterGraphRoutes(sm *SupervisorMux) {
 	huma.Get(sm.humaAPI, "/v0/graph/rigs", handleGraphRigsImpl)
-	huma.Get(sm.humaAPI, "/v0/graph/endpoints", handleGraphEndpoints)
+	huma.Get(sm.humaAPI, "/v0/graph/endpoints", handleGraphEndpointsImpl)
 	huma.Get(sm.humaAPI, "/v0/graph/endpoints/{urn}/consumers", handleGraphEndpointConsumers)
 	huma.Get(sm.humaAPI, "/v0/graph/blast", handleGraphBlast)
 	huma.Get(sm.humaAPI, "/v0/graph/callers", handleGraphCallers)
