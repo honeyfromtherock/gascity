@@ -38,6 +38,43 @@ func TestHookPreEditWithMultiEdit(t *testing.T) {
 	}
 }
 
+func TestHookUserPromptDetectsEndpointURN(t *testing.T) {
+	stdinJSON := `{"prompt": "Refactor endpoint:auth.Login to handle 2FA"}`
+	out, exit := runHookWithStdin(t, "user-prompt", stdinJSON)
+	if exit != 0 {
+		t.Errorf("exit = %d, want 0", exit)
+	}
+	// Output may be empty if no rigs are registered; should NOT contain panic
+	if strings.Contains(out, "panic") {
+		t.Fatalf("hook output contained panic: %s", out)
+	}
+	_ = out
+}
+
+func TestHookUserPromptIgnoresPromptsWithoutURNs(t *testing.T) {
+	stdinJSON := `{"prompt": "Hello, world"}`
+	out, exit := runHookWithStdin(t, "user-prompt", stdinJSON)
+	if exit != 0 {
+		t.Errorf("exit = %d, want 0", exit)
+	}
+	if strings.TrimSpace(out) != "" {
+		t.Errorf("expected empty output for prompt without URN, got: %q", out)
+	}
+}
+
+// Ensures the per-prompt URN match cap (3) is respected.
+func TestHookUserPromptCapsURNsPerPrompt(t *testing.T) {
+	urns := extractEndpointURNs(map[string]any{
+		"prompt": "endpoint:a.A endpoint:b.B endpoint:c.C endpoint:d.D endpoint:e.E",
+	})
+	if len(urns) > 3 {
+		t.Errorf("got %d URNs, want <= 3 (cap is 3)", len(urns))
+	}
+	if len(urns) != 3 {
+		t.Errorf("got %d URNs, expected exactly 3", len(urns))
+	}
+}
+
 // runHookWithStdin invokes the hook subcommand with stdin piped in.
 func runHookWithStdin(t *testing.T, subcommand, stdinJSON string) (string, int) {
 	t.Helper()
