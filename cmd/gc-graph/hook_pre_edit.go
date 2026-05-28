@@ -50,6 +50,6 @@ func runHookPreEdit(_ []string) int {
 
 // Stubs for sibling subcommands so the dispatcher compiles. Real impls in later tasks.
 func runHookUserPrompt(args []string) int { return runHookUserPromptReal(args) }
-func runHookList(_ []string) int       { return 0 }
-func runHookDisable(_ []string) int    { return 0 }
-func runHookTest(_ []string) int       { return 0 }
+func runHookList(args []string) int    { return runHookListReal(args) }
+func runHookDisable(args []string) int { return runHookDisableReal(args) }
+func runHookTest(args []string) int    { return runHookTestReal(args) }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -101,4 +102,48 @@ func runHookWithStdin(t *testing.T, subcommand, stdinJSON string) (string, int) 
 	var buf bytes.Buffer
 	_, _ = io.Copy(&buf, stdoutR)
 	return buf.String(), exit
+}
+
+func TestHookListPrintsConfiguredHooks(t *testing.T) {
+	dir := t.TempDir()
+	settingsPath := filepath.Join(dir, "settings.json")
+	if err := mergeHooksIntoSettings(settingsPath); err != nil {
+		t.Fatal(err)
+	}
+	out := captureStdout(t, func() int {
+		return listHooksFromPath(settingsPath)
+	})
+	if !strings.Contains(out, "PreToolUse") || !strings.Contains(out, "UserPromptSubmit") {
+		t.Errorf("hook list missing expected events: %s", out)
+	}
+}
+
+func TestHookDisableRemovesEntry(t *testing.T) {
+	dir := t.TempDir()
+	settingsPath := filepath.Join(dir, "settings.json")
+	mergeHooksIntoSettings(settingsPath)
+	if err := disableHookInPath(settingsPath, "PreToolUse"); err != nil {
+		t.Fatal(err)
+	}
+	out := captureStdout(t, func() int { return listHooksFromPath(settingsPath) })
+	if strings.Contains(out, "PreToolUse") {
+		t.Errorf("PreToolUse should be removed; still present: %s", out)
+	}
+	if !strings.Contains(out, "UserPromptSubmit") {
+		t.Errorf("UserPromptSubmit should remain")
+	}
+}
+
+// captureStdout runs fn with stdout redirected, returns captured output.
+func captureStdout(t *testing.T, fn func() int) string {
+	t.Helper()
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	_ = fn()
+	w.Close()
+	os.Stdout = old
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	return buf.String()
 }
