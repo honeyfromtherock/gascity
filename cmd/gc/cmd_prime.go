@@ -61,6 +61,7 @@ func newPrimeCmd(stdout, stderr io.Writer) *cobra.Command {
 	var hookMode bool
 	var hookFormat string
 	var strictMode bool
+	var graphContext bool
 	cmd := &cobra.Command{
 		Use:   "prime [agent-name]",
 		Short: "Output the behavioral prompt for an agent",
@@ -92,7 +93,7 @@ to empty output from valid conditional logic, or on suspended states
 		Args: cobra.MaximumNArgs(1),
 	}
 	cmd.RunE = func(_ *cobra.Command, args []string) error {
-		if doPrimeWithHookFormat(args, stdout, stderr, hookMode, hookFormat, strictMode) != 0 {
+		if doPrimeWithHookFormat(args, stdout, stderr, hookMode, hookFormat, strictMode, graphContext) != 0 {
 			return errExit
 		}
 		return nil
@@ -100,6 +101,7 @@ to empty output from valid conditional logic, or on suspended states
 	cmd.Flags().BoolVar(&hookMode, "hook", false, "compatibility mode for runtime hook invocations")
 	cmd.Flags().StringVar(&hookFormat, "hook-format", "", "format hook output for a provider")
 	cmd.Flags().BoolVar(&strictMode, "strict", false, "fail on missing city, missing or unknown agent, or unreadable prompt_template instead of falling back to the default prompt")
+	cmd.Flags().BoolVar(&graphContext, "graph-context", false, "append codegraph context (gc-graph prime output) to the rendered prompt; overrides agent config")
 	return cmd
 }
 
@@ -107,7 +109,7 @@ to empty output from valid conditional logic, or on suspended states
 // need to know about the strict flag; its return type stays int because
 // the caller shape matches other cmd/gc entry points.
 func doPrime(args []string, stdout, stderr io.Writer) int { //nolint:unparam // strictMode=false means always returns 0
-	return doPrimeWithMode(args, stdout, stderr, false, false)
+	return doPrimeWithMode(args, stdout, stderr, false, false, false)
 }
 
 // doPrimeWithMode's strict-mode contract: only states that would indicate
@@ -123,11 +125,12 @@ func doPrime(args []string, stdout, stderr io.Writer) int { //nolint:unparam // 
 // session-id state behind for an agent that doesn't exist. Suspended
 // paths still run side effects because suspension is a legitimate quiet
 // state, not a failure.
-func doPrimeWithMode(args []string, stdout, stderr io.Writer, hookMode, strictMode bool) int {
-	return doPrimeWithHookFormat(args, stdout, stderr, hookMode, "", strictMode)
+func doPrimeWithMode(args []string, stdout, stderr io.Writer, hookMode, strictMode, graphContext bool) int {
+	return doPrimeWithHookFormat(args, stdout, stderr, hookMode, "", strictMode, graphContext)
 }
 
-func doPrimeWithHookFormat(args []string, stdout, stderr io.Writer, hookMode bool, hookFormat string, strictMode bool) int {
+func doPrimeWithHookFormat(args []string, stdout, stderr io.Writer, hookMode bool, hookFormat string, strictMode, graphContext bool) int {
+	_ = graphContext // Task 3 wires this into the rendered prompt; accepted/threaded here.
 	agentName := os.Getenv("GC_ALIAS")
 	if agentName == "" {
 		agentName = os.Getenv("GC_AGENT")
@@ -602,4 +605,26 @@ func buildPrimeContext(cityPath, cityName string, a *config.Agent, rigs []config
 	ctx.WorkQuery = expandAgentCommandTemplate(cityPath, cityName, a, rigs, "work_query", a.EffectiveWorkQuery(), stderr)
 	ctx.SlingQuery = expandAgentCommandTemplate(cityPath, cityName, a, rigs, "sling_query", a.EffectiveSlingQuery(), stderr)
 	return ctx
+}
+
+// gatherGraphContext shells out to `gc-graph prime --bead <id>` and returns
+// the captured markdown output. If the binary isn't on PATH or the exec
+// fails, returns ("", err) — the caller logs and continues without context.
+//
+// Override the binary via the GC_GRAPH_BIN env var (used by tests to inject
+// /usr/bin/true or /bin/echo).
+func gatherGraphContext(beadID string, maxTokens int) (string, error) {
+	bin := os.Getenv("GC_GRAPH_BIN")
+	if bin == "" {
+		bin = "gc-graph"
+	}
+	if _, err := exec.LookPath(bin); err != nil {
+		return "", fmt.Errorf("gc-graph not on PATH: %w", err)
+	}
+	cmd := exec.Command(bin, "prime", "--bead", beadID, "--max-tokens", strconv.Itoa(maxTokens), "--out", "-")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("exec %s prime: %w", bin, err)
+	}
+	return string(out), nil
 }

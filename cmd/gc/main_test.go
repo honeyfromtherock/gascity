@@ -5289,7 +5289,7 @@ prompt_template = "prompts/mayor.md"
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doPrimeWithMode([]string{"nonexistent"}, &stdout, &stderr, false, true)
+	code := doPrimeWithMode([]string{"nonexistent"}, &stdout, &stderr, false, true, false)
 	if code == 0 {
 		t.Fatalf("doPrimeWithMode(strict=true, unknown agent) = 0, want non-zero; stderr: %s", stderr.String())
 	}
@@ -5335,7 +5335,7 @@ prompt_template = "prompts/mayor.md"
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, false, true)
+	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, false, true, false)
 	if code != 0 {
 		t.Fatalf("doPrimeWithMode(strict=true, known agent) = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -5355,7 +5355,7 @@ func TestDoPrimeStrictNoCity(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doPrimeWithMode([]string{"anyname"}, &stdout, &stderr, false, true)
+	code := doPrimeWithMode([]string{"anyname"}, &stdout, &stderr, false, true, false)
 	if code == 0 {
 		t.Fatalf("doPrimeWithMode(strict=true, no city) = 0, want non-zero; stderr: %s", stderr.String())
 	}
@@ -5396,7 +5396,7 @@ prompt_template = "prompts/mayor.md"
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doPrimeWithMode(nil, &stdout, &stderr, false, true)
+	code := doPrimeWithMode(nil, &stdout, &stderr, false, true, false)
 	if code == 0 {
 		t.Fatalf("doPrimeWithMode(strict=true, no name) = 0, want non-zero; stderr: %s", stderr.String())
 	}
@@ -5439,7 +5439,7 @@ max_active_sessions = 1
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, false, true)
+	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, false, true, false)
 	if code != 0 {
 		t.Fatalf("doPrimeWithMode(strict=true, agent without prompt_template) = %d, want 0 (supported config); stderr: %s", code, stderr.String())
 	}
@@ -5480,7 +5480,7 @@ prompt_template = "prompts/does-not-exist.md"
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, false, true)
+	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, false, true, false)
 	if code == 0 {
 		t.Fatalf("doPrimeWithMode(strict=true, missing template file) = 0, want non-zero; stderr: %s", stderr.String())
 	}
@@ -5524,7 +5524,7 @@ prompt_template = %q
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, false, true)
+	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, false, true, false)
 	if code != 0 {
 		t.Fatalf("doPrimeWithMode(strict=true, absolute template path) = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -5585,7 +5585,7 @@ prompt_template = "prompts/mayor.md"
 	t.Setenv("GC_ALIAS", "")
 
 	var stdout, stderr bytes.Buffer
-	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, false, true)
+	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, false, true, false)
 	if code != 0 {
 		t.Fatalf("doPrimeWithMode(strict=true, legitimately-empty template) = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -5624,7 +5624,7 @@ name = "mayor"
 	t.Setenv("GC_SESSION_ID", "test-session-123")
 
 	var stdout, stderr bytes.Buffer
-	code := doPrimeWithMode([]string{"nonexistent"}, &stdout, &stderr, true, true)
+	code := doPrimeWithMode([]string{"nonexistent"}, &stdout, &stderr, true, true, false)
 	if code == 0 {
 		t.Fatalf("doPrimeWithMode(strict=true, hook=true, unknown agent) = 0, want non-zero; stderr: %s", stderr.String())
 	}
@@ -5669,7 +5669,7 @@ prompt_template = "prompts/does-not-exist.md"
 	t.Setenv("GC_SESSION_ID", "test-session-missing-template")
 
 	var stdout, stderr bytes.Buffer
-	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, true, true)
+	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, true, true, false)
 	if code == 0 {
 		t.Fatalf("doPrimeWithMode(strict=true, hook=true, missing template) = 0, want non-zero; stderr: %s", stderr.String())
 	}
@@ -5723,7 +5723,7 @@ prompt_template = "prompts/mayor.md"
 	t.Setenv("GC_SESSION_ID", "test-session-456")
 
 	var stdout, stderr bytes.Buffer
-	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, true, true)
+	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, true, true, false)
 	if code != 0 {
 		t.Fatalf("doPrimeWithMode(strict=true, hook=true, known agent) = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -5785,7 +5785,7 @@ prompt_template = "prompts/mayor.md"
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, false, true)
+	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, false, true, false)
 	if code == 0 {
 		t.Fatalf("doPrimeWithMode(strict=true, unreadable template) = 0, want non-zero; stderr: %s", stderr.String())
 	}
@@ -5833,7 +5833,7 @@ suspended = true
 	t.Setenv("GC_SESSION_ID", "test-session-suspended")
 
 	var stdout, stderr bytes.Buffer
-	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, true, true)
+	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, true, true, false)
 	if code != 0 {
 		t.Fatalf("doPrimeWithMode(strict=true, hook=true, suspended agent) = %d, want 0 (suspended is a quiet success); stderr: %s", code, stderr.String())
 	}
@@ -6075,7 +6075,7 @@ prompt_template = "prompts/mayor.md"
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doPrimeWithMode(nil, &stdout, &stderr, true, false)
+	code := doPrimeWithMode(nil, &stdout, &stderr, true, false, false)
 	if code != 0 {
 		t.Fatalf("doPrimeWithMode = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -6156,7 +6156,7 @@ prompt_template = "prompts/probe.md"
 	t.Setenv("GEMINI_SESSION_ID", "gemini-provider-session")
 
 	var stdout, stderr bytes.Buffer
-	code := doPrimeWithMode(nil, &stdout, &stderr, true, false)
+	code := doPrimeWithMode(nil, &stdout, &stderr, true, false, false)
 	if code != 0 {
 		t.Fatalf("doPrimeWithMode = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -6208,7 +6208,7 @@ prompt_template = "prompts/probe.md"
 	t.Setenv("GC_TEMPLATE", "probe")
 
 	var stdout, stderr bytes.Buffer
-	code := doPrimeWithMode(nil, &stdout, &stderr, true, false)
+	code := doPrimeWithMode(nil, &stdout, &stderr, true, false, false)
 	if code != 0 {
 		t.Fatalf("doPrimeWithMode = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -6274,7 +6274,7 @@ prompt_template = "prompts/probe.md"
 	t.Setenv("GC_TEMPLATE", "")
 
 	var stdout, stderr bytes.Buffer
-	code := doPrimeWithMode(nil, &stdout, &stderr, true, false)
+	code := doPrimeWithMode(nil, &stdout, &stderr, true, false, false)
 	if code != 0 {
 		t.Fatalf("doPrimeWithMode = %d, want 0; stderr: %s", code, stderr.String())
 	}

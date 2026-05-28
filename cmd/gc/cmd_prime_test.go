@@ -292,7 +292,7 @@ prompt_template = "prompts/polecat.template.md"
 	t.Setenv("GC_SESSION_ID", "sess-777")
 
 	var stdout, stderr bytes.Buffer
-	code := doPrimeWithMode(nil, &stdout, &stderr, true, false)
+	code := doPrimeWithMode(nil, &stdout, &stderr, true, false, false)
 	if code != 0 {
 		t.Fatalf("doPrimeWithMode() = %d, want 0; stderr=%q", code, stderr.String())
 	}
@@ -401,7 +401,7 @@ prompt_template = "prompts/worker.md"
 			t.Setenv(startupPromptDeliveredEnv, tc.delivered)
 
 			var stdout, stderr bytes.Buffer
-			code := doPrimeWithMode(nil, &stdout, &stderr, true, false)
+			code := doPrimeWithMode(nil, &stdout, &stderr, true, false, false)
 			if code != 0 {
 				t.Fatalf("doPrimeWithMode() = %d, want 0; stderr=%q", code, stderr.String())
 			}
@@ -453,7 +453,7 @@ prompt_template = "prompts/worker.md"
 	withPrimeHookStdin(t, nil)
 
 	var stdout, stderr bytes.Buffer
-	code := doPrimeWithHookFormat(nil, &stdout, &stderr, true, hookOutputFormatGemini, false)
+	code := doPrimeWithHookFormat(nil, &stdout, &stderr, true, hookOutputFormatGemini, false, false)
 	if code != 0 {
 		t.Fatalf("doPrimeWithHookFormat() = %d, want 0; stderr=%q", code, stderr.String())
 	}
@@ -481,7 +481,7 @@ func TestDoPrimeWithHookFormat_FormatsDefaultFallback(t *testing.T) {
 	t.Setenv("GC_AGENT", "")
 
 	var stdout, stderr bytes.Buffer
-	code := doPrimeWithHookFormat(nil, &stdout, &stderr, true, hookOutputFormatCodex, false)
+	code := doPrimeWithHookFormat(nil, &stdout, &stderr, true, hookOutputFormatCodex, false, false)
 	if code != 0 {
 		t.Fatalf("doPrimeWithHookFormat() = %d, want 0; stderr=%q", code, stderr.String())
 	}
