@@ -39,6 +39,8 @@ func main() {
 		os.Exit(cmdRigs(os.Args[2:]))
 	case "reindex":
 		os.Exit(cmdReindex(os.Args[2:]))
+	case "hook":
+		os.Exit(runHook(os.Args[2:]))
 	default:
 		usage()
 		os.Exit(2)
@@ -46,5 +48,5 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "gc graph {find|callers|blast|cypher|grep|endpoint-consumers|rigs|reindex} ...")
+	fmt.Fprintln(os.Stderr, "gc graph {find|callers|blast|cypher|grep|endpoint-consumers|rigs|reindex|hook} ...")
 }
