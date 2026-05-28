@@ -54,6 +54,18 @@ func cmdBlast(args []string) int {
 		if *rig == "" {
 			*rig = rigName
 		}
+		// Resolve --root from rigs.toml so internal.OpenRig opens the right DB
+		// without needing the gc rig path / assets/<rig> conventions.
+		if *root == "" {
+			if rigs, err := LoadRigs(); err == nil {
+				for _, r := range rigs {
+					if r.Name == rigName {
+						*root = r.Root
+						break
+					}
+				}
+			}
+		}
 	}
 
 	if urn == "" || (!*allRigs && *rig == "" && *root == "") {
@@ -201,7 +213,8 @@ func blastQueries(depth int) map[string]string {
 				 RETURN DISTINCT n.qname LIMIT 500`, depth),
 		"tests": `MATCH (t:Test)-[:TESTS|CALLS*1..4]->(s) WHERE s.urn=$urn
 				   RETURN DISTINCT t.file LIMIT 200`,
-		"endpoints": `MATCH (n)-[:HANDLES|CALLS_EP]->(e:Endpoint) WHERE n.urn=$urn
+		"endpoints": `MATCH (n)-[:HANDLES|CALLS_EP]->(e:Endpoint)
+		               WHERE n.urn=$urn OR n.path=$urn
 					   RETURN DISTINCT e.urn LIMIT 200`,
 		"db_columns": `MATCH (n)-[:READS_COL|WRITES_COL]->(c:DbColumn) WHERE n.urn=$urn
 						RETURN DISTINCT c.qname LIMIT 200`,
