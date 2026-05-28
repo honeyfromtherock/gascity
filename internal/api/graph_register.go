@@ -16,5 +16,5 @@ func RegisterGraphRoutes(sm *SupervisorMux) {
 	huma.Get(sm.humaAPI, "/v0/graph/endpoints", handleGraphEndpointsImpl)
 	huma.Get(sm.humaAPI, "/v0/graph/endpoints/{urn}/consumers", handleGraphEndpointConsumersImpl)
 	huma.Get(sm.humaAPI, "/v0/graph/blast", handleGraphBlastImpl)
-	huma.Get(sm.humaAPI, "/v0/graph/callers", handleGraphCallers)
+	huma.Get(sm.humaAPI, "/v0/graph/callers", handleGraphCallersImpl)
 }
