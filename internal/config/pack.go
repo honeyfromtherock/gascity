@@ -2390,6 +2390,9 @@ func applyAgentOverride(a *Agent, ov *AgentOverride) {
 	if ov.InjectAssignedSkills != nil {
 		a.InjectAssignedSkills = ov.InjectAssignedSkills
 	}
+	if ov.GraphContext != nil {
+		a.GraphContext = *ov.GraphContext
+	}
 	if len(ov.SessionSetup) > 0 {
 		a.SessionSetup = append([]string(nil), ov.SessionSetup...)
 	}

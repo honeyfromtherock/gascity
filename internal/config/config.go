@@ -575,6 +575,8 @@ type AgentOverride struct {
 	// InjectAssignedSkills overrides Agent.InjectAssignedSkills
 	// (see that field for semantics).
 	InjectAssignedSkills *bool `toml:"inject_assigned_skills,omitempty"`
+	// GraphContext overrides Agent.GraphContext (see that field for semantics).
+	GraphContext *bool `toml:"graph_context,omitempty"`
 	// SessionSetup overrides the agent's session_setup commands.
 	SessionSetup []string `toml:"session_setup,omitempty"`
 	// SessionSetupScript overrides the agent's session_setup_script path.
@@ -1777,6 +1779,13 @@ type Agent struct {
 	ProcessNames []string `toml:"process_names,omitempty"`
 	// EmitsPermissionWarning indicates whether the agent emits permission prompts that should be suppressed.
 	EmitsPermissionWarning *bool `toml:"emits_permission_warning,omitempty"`
+	// GraphContext enables auto-injection of codegraph context into this
+	// agent's `gc prime` output. When true, after the prompt template is
+	// rendered, `gc prime` resolves the session's work bead and shells out
+	// to `gc-graph prime --bead <id>`, appending the result as a "## Graph
+	// context" section. Errors are logged to stderr and prompt emission
+	// continues unaffected — graph context is additive, never blocking.
+	GraphContext bool `toml:"graph_context,omitempty"`
 	// Env sets additional environment variables for the agent process.
 	Env map[string]string `toml:"env,omitempty"`
 	// OptionDefaults overrides the provider's effective schema defaults
