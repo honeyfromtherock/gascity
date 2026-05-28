@@ -622,7 +622,12 @@ func gatherGraphContext(beadID string, maxTokens int) (string, error) {
 	if _, err := exec.LookPath(bin); err != nil {
 		return "", fmt.Errorf("gc-graph not on PATH: %w", err)
 	}
-	cmd := exec.Command(bin, "prime", "--bead", beadID, "--max-tokens", strconv.Itoa(maxTokens), "--out", "-")
+	// Note: gc-graph prime doesn't support --max-tokens directly; the cap is
+	// honored at the inner `gc graph blast --max-tokens` call gc-graph prime makes
+	// per touched-file. maxTokens is reserved for a future direct cap on the prime
+	// output once gc-graph prime exposes one.
+	_ = maxTokens
+	cmd := exec.Command(bin, "prime", "--bead", beadID, "--out", "-")
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("exec %s prime: %w", bin, err)

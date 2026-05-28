@@ -51,20 +51,7 @@ func TestGatherGraphContext_HappyPath(t *testing.T) {
 	if !strings.Contains(out, "bd-fake-123") {
 		t.Errorf("expected output to mention bead ID, got %q", out)
 	}
-	if !strings.Contains(out, "--max-tokens") {
-		t.Errorf("expected output to include --max-tokens arg, got %q", out)
-	}
-}
-
-// TestGatherGraphContext_MaxTokensFormatted: --max-tokens is rendered as a
-// decimal string, not the int literal. This catches strconv vs fmt slip-ups.
-func TestGatherGraphContext_MaxTokensFormatted(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("uses POSIX /bin/echo")
-	}
-	t.Setenv("GC_GRAPH_BIN", "/bin/echo")
-	out, _ := gatherGraphContext("bd-x", 2500)
-	if !strings.Contains(out, "2500") {
-		t.Errorf("expected --max-tokens 2500 in output, got %q", out)
+	if !strings.Contains(out, "--bead") {
+		t.Errorf("expected output to include --bead arg, got %q", out)
 	}
 }
