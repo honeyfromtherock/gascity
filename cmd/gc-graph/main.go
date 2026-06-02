@@ -39,6 +39,8 @@ func main() {
 		os.Exit(cmdRigs(os.Args[2:]))
 	case "reindex":
 		os.Exit(cmdReindex(os.Args[2:]))
+	case "reindex-debounced":
+		os.Exit(cmdReindexDebounced(os.Args[2:]))
 	case "hook":
 		os.Exit(runHook(os.Args[2:]))
 	case "install":
