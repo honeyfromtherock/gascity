@@ -19,6 +19,9 @@ var doctrineMD []byte
 //go:embed githook.sh
 var gitHookSh []byte
 
+//go:embed sweep.plist
+var sweepPlistTemplate []byte
+
 // SkillMD returns the canonical Claude Code skill file content.
 func SkillMD() []byte { return append([]byte(nil), skillMD...) }
 
@@ -32,3 +35,8 @@ func DoctrineMD() []byte { return append([]byte(nil), doctrineMD...) }
 // caller substitutes __RIG_NAME__ with the rig's codegraph name before
 // writing it into the rig's post-commit / post-merge hooks.
 func GitHookSh() []byte { return append([]byte(nil), gitHookSh...) }
+
+// SweepPlist returns the launchd LaunchAgent template for the periodic
+// codegraph sweep. The caller substitutes __GC_GRAPH__, __INTERVAL__, and
+// __LOG__ before writing it to ~/Library/LaunchAgents.
+func SweepPlist() []byte { return append([]byte(nil), sweepPlistTemplate...) }

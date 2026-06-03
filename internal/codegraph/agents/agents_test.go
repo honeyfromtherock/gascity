@@ -42,6 +42,21 @@ func TestDoctrineMDHasSentinel(t *testing.T) {
 	}
 }
 
+func TestSweepPlistHasLabelAndTokens(t *testing.T) {
+	s := string(SweepPlist())
+	for _, want := range []string{
+		"com.gridbase.codegraph.sweep",
+		"__GC_GRAPH__",
+		"__INTERVAL__",
+		"__LOG__",
+		"--if-stale",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("sweep.plist missing %q", want)
+		}
+	}
+}
+
 func TestGitHookShHasSentinelsAndToken(t *testing.T) {
 	s := string(GitHookSh())
 	if !strings.Contains(s, "# --- BEGIN CODEGRAPH v1 ---") {
