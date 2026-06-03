@@ -20,6 +20,7 @@ func cmdReindex(args []string) int {
 	fs := flag.NewFlagSet("reindex", flag.ExitOnError)
 	all := fs.Bool("all", false, "reindex all registered rigs")
 	binary := fs.String("bin", "./bin/gc-codegraph", "path to gc-codegraph binary")
+	ifStale := fs.Bool("if-stale", false, "reindex only rigs whose git HEAD differs from the indexed :Manifest.sha (or that have no graph)")
 	_ = fs.Parse(args)
 
 	rigsPath, err := rigdir.DefaultPath()
@@ -71,6 +72,10 @@ func cmdReindex(args []string) int {
 
 	failed := 0
 	for _, r := range targets {
+		if *ifStale && !rigStale(r) {
+			fmt.Fprintf(os.Stderr, "[reindex] %s fresh — skip\n", r.Name)
+			continue
+		}
 		sha := gitSHA(r.Root)
 		out := r.Root + "/.codegraph"
 		staging := r.Root + "/.codegraph.staging"
