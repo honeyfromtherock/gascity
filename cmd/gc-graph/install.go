@@ -32,6 +32,7 @@ func runInstall(args []string) int {
 	}
 
 	var targetClaudeDir, targetCLAUDEmd string
+	var rigForHooks *rigdir.Rig
 	if *global {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -54,6 +55,8 @@ func runInstall(args []string) int {
 		}
 		targetClaudeDir = filepath.Join(r.Root, ".claude")
 		targetCLAUDEmd = filepath.Join(r.Root, "CLAUDE.md")
+		rr := r
+		rigForHooks = &rr
 	}
 
 	if err := writeSkillFile(filepath.Join(targetClaudeDir, "skills")); err != nil {
@@ -75,6 +78,14 @@ func runInstall(args []string) int {
 			return 1
 		}
 		fmt.Fprintf(os.Stdout, "+ doctrine appended to %s\n", targetCLAUDEmd)
+	}
+
+	if rigForHooks != nil {
+		if err := installGitHooks(rigForHooks.Root, rigForHooks.Name); err != nil {
+			fmt.Fprintf(os.Stderr, "git hooks: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(os.Stdout, "+ git hooks (post-commit, post-merge) in %s\n", rigForHooks.Root)
 	}
 	return 0
 }
