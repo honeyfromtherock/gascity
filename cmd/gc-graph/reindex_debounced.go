@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -54,8 +55,14 @@ func cmdReindexDebounced(args []string) int {
 			self = os.Args[0]
 		}
 		cmd := exec.Command(self, "reindex", rigName)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		if logw, lerr := openReindexLog(rig.Root, now); lerr == nil {
+			defer func() { _ = logw.Close() }()
+			cmd.Stdout = logw
+			cmd.Stderr = logw
+		} else {
+			cmd.Stdout = os.Stderr
+			cmd.Stderr = os.Stderr
+		}
 		return cmd.Run()
 	}
 
@@ -68,6 +75,19 @@ func cmdReindexDebounced(args []string) int {
 		fmt.Fprintf(os.Stderr, "[reindex-debounced] %s reindexed\n", rigName)
 	}
 	return 0
+}
+
+// openReindexLog opens (creating, append-mode) the rig's reindex log and
+// writes a header line marking this run. Hook-spawned reindexes redirect their
+// own output to /dev/null, so this file is the only record of what happened.
+func openReindexLog(rigRoot string, now int64) (io.WriteCloser, error) {
+	path := filepath.Join(rigRoot, ".codegraph", ".reindex.log")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Fprintf(f, "=== reindex %d ===\n", now)
+	return f, nil
 }
 
 // runDebounced is the testable core: write `now` as the trigger timestamp,
