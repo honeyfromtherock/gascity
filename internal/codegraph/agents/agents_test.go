@@ -41,3 +41,19 @@ func TestDoctrineMDHasSentinel(t *testing.T) {
 		t.Errorf("doctrine.md missing end sentinel")
 	}
 }
+
+func TestGitHookShHasSentinelsAndToken(t *testing.T) {
+	s := string(GitHookSh())
+	if !strings.Contains(s, "# --- BEGIN CODEGRAPH v1 ---") {
+		t.Errorf("githook.sh missing start sentinel")
+	}
+	if !strings.Contains(s, "# --- END CODEGRAPH v1 ---") {
+		t.Errorf("githook.sh missing end sentinel")
+	}
+	if !strings.Contains(s, "__RIG_NAME__") {
+		t.Errorf("githook.sh missing __RIG_NAME__ substitution token")
+	}
+	if !strings.Contains(s, "reindex-debounced") {
+		t.Errorf("githook.sh should call reindex-debounced")
+	}
+}
