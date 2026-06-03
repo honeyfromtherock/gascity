@@ -73,18 +73,19 @@ func cmdReindex(args []string) int {
 	for _, r := range targets {
 		sha := gitSHA(r.Root)
 		out := r.Root + "/.codegraph"
-		// Clean prior graph artifacts to avoid duplicate-PK errors on re-load
-		// and to clear stale Ladybug WAL files / shard outputs that block reopen.
-		_ = os.RemoveAll(out + "/graph.kuzu")
-		_ = os.RemoveAll(out + "/graph.kuzu.wal")
-		_ = os.RemoveAll(out + "/graph.kuzu.tmp")
-		_ = os.RemoveAll(out + "/shards")
-		_ = os.RemoveAll(out + "/parquet")
-		_ = os.RemoveAll(out + "/csv")
+		staging := r.Root + "/.codegraph.staging"
+		// Build into a staging dir so the live graph at `out` stays readable
+		// and an indexer failure can't destroy it. Swap on success.
+		_ = os.RemoveAll(staging)
+		if err := os.MkdirAll(staging, 0o755); err != nil {
+			fmt.Fprintf(os.Stderr, "[reindex] %s FAILED: mkdir staging: %v\n", r.Name, err)
+			failed++
+			continue
+		}
 		args := []string{
 			"--rig", r.Name,
 			"--root", r.Root,
-			"--out", out,
+			"--out", staging,
 			"--sha", sha,
 		}
 		if r.Profile != "" {
@@ -108,13 +109,55 @@ func cmdReindex(args []string) int {
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
 			fmt.Fprintf(os.Stderr, "[reindex] %s FAILED: %v\n", r.Name, err)
+			_ = os.RemoveAll(staging) // old graph at out untouched
 			failed++
+			continue
 		}
+		if err := swapStagedGraph(out, staging); err != nil {
+			fmt.Fprintf(os.Stderr, "[reindex] %s swap FAILED: %v\n", r.Name, err)
+			_ = os.RemoveAll(staging)
+			failed++
+			continue
+		}
+		// New graph is live; clear superseded build intermediates from out.
+		_ = os.RemoveAll(out + "/shards")
+		_ = os.RemoveAll(out + "/parquet")
+		_ = os.RemoveAll(out + "/csv")
+		_ = os.RemoveAll(staging)
 	}
 	if failed > 0 {
 		return 1
 	}
 	return 0
+}
+
+// swapStagedGraph atomically moves the freshly built graph.kuzu from staging
+// into out, replacing the old graph in a single rename. graph.kuzu is a single
+// file, so on the same filesystem the rename is atomic: a concurrent reader
+// sees either the whole old graph or the whole new one, never a gap (unlike the
+// previous delete-then-rebuild, which left the rig graphless for ~60s). Runtime
+// files already in out (e.g. .last-trigger) are preserved; manifest.json is
+// refreshed best-effort.
+func swapStagedGraph(out, staging string) error {
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		return err
+	}
+	src := filepath.Join(staging, "graph.kuzu")
+	if _, err := os.Stat(src); err != nil {
+		return fmt.Errorf("staged graph missing: %w", err)
+	}
+	dst := filepath.Join(out, "graph.kuzu")
+	// Drop any stale WAL/tmp next to the old graph so a reader can't pair the
+	// new graph with an old WAL.
+	_ = os.RemoveAll(dst + ".wal")
+	_ = os.RemoveAll(dst + ".tmp")
+	if err := os.Rename(src, dst); err != nil {
+		return err
+	}
+	if b, err := os.ReadFile(filepath.Join(staging, "manifest.json")); err == nil {
+		_ = os.WriteFile(filepath.Join(out, "manifest.json"), b, 0o644)
+	}
+	return nil
 }
 
 // resolveIndexer locates the gc-codegraph binary, independent of the current
