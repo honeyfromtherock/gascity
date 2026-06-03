@@ -22,6 +22,7 @@ func runInstall(args []string) int {
 	fs := flag.NewFlagSet("install", flag.ExitOnError)
 	rigName := fs.String("rig", "", "install into a specific registered rig's .claude/ directory")
 	global := fs.Bool("global", false, "install into ~/.claude/")
+	bindir := fs.String("bindir", "", "directory to install gc-graph/gc-codegraph binaries into (global install; default $GOBIN or ~/go/bin)")
 	upgrade := fs.Bool("upgrade", false, "re-install over existing artifacts (idempotent regardless of this flag)")
 	_ = upgrade // flag accepted for forward-compat; install is always idempotent
 	_ = fs.Parse(args)
@@ -86,6 +87,39 @@ func runInstall(args []string) int {
 			return 1
 		}
 		fmt.Fprintf(os.Stdout, "+ git hooks (post-commit, post-merge) in %s\n", rigForHooks.Root)
+	}
+
+	if *global {
+		dir := *bindir
+		if dir == "" {
+			if gobin := os.Getenv("GOBIN"); gobin != "" {
+				dir = gobin
+			} else if home, err := os.UserHomeDir(); err == nil {
+				dir = filepath.Join(home, "go", "bin")
+			}
+		}
+		if dir == "" {
+			fmt.Fprintln(os.Stderr, "binaries: could not determine bindir; pass --bindir")
+			return 1
+		}
+		self, err := os.Executable()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "binaries: cannot locate self: %v\n", err)
+			return 1
+		}
+		indexer, err := resolveIndexer("")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "binaries: %v\n", err)
+			return 1
+		}
+		if err := installBinaries(dir, self, indexer); err != nil {
+			fmt.Fprintf(os.Stderr, "binaries: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(os.Stdout, "+ binaries (gc-graph, gc-codegraph) in %s\n", dir)
+		if !dirOnPath(dir) {
+			fmt.Fprintf(os.Stdout, "  ! %s is not on your PATH — add it so the git hook can run gc-graph\n", dir)
+		}
 	}
 	return 0
 }
