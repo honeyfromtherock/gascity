@@ -23,6 +23,8 @@ func runInstall(args []string) int {
 	rigName := fs.String("rig", "", "install into a specific registered rig's .claude/ directory")
 	global := fs.Bool("global", false, "install into ~/.claude/")
 	bindir := fs.String("bindir", "", "directory to install gc-graph/gc-codegraph binaries into (global install; default $GOBIN or ~/go/bin)")
+	noSweep := fs.Bool("no-sweep", false, "skip installing the periodic launchd sweep agent (global install)")
+	sweepInterval := fs.Int("sweep-interval", 900, "seconds between periodic sweeps (global install)")
 	upgrade := fs.Bool("upgrade", false, "re-install over existing artifacts (idempotent regardless of this flag)")
 	_ = upgrade // flag accepted for forward-compat; install is always idempotent
 	_ = fs.Parse(args)
@@ -119,6 +121,14 @@ func runInstall(args []string) int {
 		fmt.Fprintf(os.Stdout, "+ binaries (gc-graph, gc-codegraph) in %s\n", dir)
 		if !dirOnPath(dir) {
 			fmt.Fprintf(os.Stdout, "  ! %s is not on your PATH — add it so the git hook can run gc-graph\n", dir)
+		}
+		if !*noSweep {
+			gcPath := filepath.Join(dir, "gc-graph") // the just-deployed binary
+			if err := installSweepAgent(gcPath, *sweepInterval); err != nil {
+				fmt.Fprintf(os.Stderr, "sweep agent: %v\n", err)
+				return 1
+			}
+			fmt.Fprintf(os.Stdout, "+ launchd sweep agent (every %ds) → %s\n", *sweepInterval, sweepLogPath())
 		}
 	}
 	return 0
