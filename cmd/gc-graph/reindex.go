@@ -63,6 +63,12 @@ func cmdReindex(args []string) int {
 		}
 	}
 
+	indexer, err := resolveIndexer(*binary)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "reindex: %v\n", err)
+		return 1
+	}
+
 	failed := 0
 	for _, r := range targets {
 		sha := gitSHA(r.Root)
@@ -97,7 +103,7 @@ func cmdReindex(args []string) int {
 			}
 		}
 		fmt.Fprintf(os.Stderr, "[reindex] %s ...\n", r.Name)
-		cmd := exec.Command(*binary, args...)
+		cmd := exec.Command(indexer, args...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
@@ -109,6 +115,43 @@ func cmdReindex(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// resolveIndexer locates the gc-codegraph binary, independent of the current
+// working directory. This matters because the Phase 5 git hook spawns the
+// reindex from the rig root, where the repo-relative "./bin/gc-codegraph"
+// default does not resolve.
+func resolveIndexer(binFlag string) (string, error) {
+	exe, _ := os.Executable()
+	return resolveIndexerFrom(binFlag, exe, exec.LookPath)
+}
+
+// resolveIndexerFrom is the testable core. Resolution order:
+//  1. binFlag, if it names an existing file (explicit path, or the repo's
+//     ./bin/gc-codegraph default when run from the repo root)
+//  2. a gc-codegraph sibling of the running executable (installed deployments
+//     where gc-graph and gc-codegraph live together, e.g. ~/go/bin — required
+//     for the git-hook flow)
+//  3. gc-codegraph on PATH
+//
+// Returns an error if none resolve, so the caller can fail BEFORE deleting any
+// existing graph artifacts.
+func resolveIndexerFrom(binFlag, exePath string, lookPath func(string) (string, error)) (string, error) {
+	if binFlag != "" {
+		if _, err := os.Stat(binFlag); err == nil {
+			return binFlag, nil
+		}
+	}
+	if exePath != "" {
+		sibling := filepath.Join(filepath.Dir(exePath), "gc-codegraph")
+		if _, err := os.Stat(sibling); err == nil {
+			return sibling, nil
+		}
+	}
+	if p, err := lookPath("gc-codegraph"); err == nil {
+		return p, nil
+	}
+	return "", fmt.Errorf("gc-codegraph not found (checked --bin %q, a sibling of %q, and PATH); pass --bin or install gc-codegraph alongside gc-graph", binFlag, exePath)
 }
 
 // gitSHA returns the HEAD commit SHA for the repo at root, or "none" if it's
