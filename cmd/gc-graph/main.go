@@ -45,6 +45,8 @@ func main() {
 		os.Exit(runHook(os.Args[2:]))
 	case "install":
 		os.Exit(runInstall(os.Args[2:]))
+	case "sweep-uninstall":
+		os.Exit(cmdSweepUninstall(os.Args[2:]))
 	case "prime":
 		os.Exit(runPrime(os.Args[2:]))
 	default:
@@ -54,5 +56,5 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "gc graph {find|callers|blast|cypher|grep|endpoint-consumers|rigs|reindex|hook|install|prime} ...")
+	fmt.Fprintln(os.Stderr, "gc graph {find|callers|blast|cypher|grep|endpoint-consumers|rigs|reindex|reindex-debounced|hook|install|sweep-uninstall|prime} ...")
 }
