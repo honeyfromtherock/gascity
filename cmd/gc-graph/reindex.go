@@ -78,7 +78,13 @@ func cmdReindex(args []string) int {
 		}
 		sha := gitSHA(r.Root)
 		out := r.Root + "/.codegraph"
-		staging := r.Root + "/.codegraph.staging"
+		// Per-process staging dir: concurrent reindexes of the SAME rig must not
+		// share one staging dir, or their interleaved writes corrupt the staged
+		// graph and one swaps a partial graph.kuzu into place. Each process gets
+		// its own; reap dirs leaked by dead reindexes (live-state query, not a
+		// lock file). The last successful swap wins.
+		cleanStaleStaging(r.Root, pidAlive)
+		staging := stagingDir(r.Root, os.Getpid())
 		// Build into a staging dir so the live graph at `out` stays readable
 		// and an indexer failure can't destroy it. Swap on success.
 		_ = os.RemoveAll(staging)
